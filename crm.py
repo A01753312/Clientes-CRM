@@ -55,9 +55,9 @@ def _gs_credentials():
         sa_info = None
         import os
         from google.oauth2.service_account import Credentials
-        env_json = os.environ.get("SERVICE_ACCOUNT_JSON")
+        env_json = os.environ.get("SECRET")
         if not env_json:
-            raise RuntimeError("❌ No se encontró la variable SERVICE_ACCOUNT_JSON en tu entorno.")
+            raise RuntimeError("❌ No se encontró la variable SECRET en tu entorno.")
         sa = json.loads(env_json)
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         return Credentials.from_service_account_info(sa, scopes=scopes)
