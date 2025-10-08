@@ -1319,113 +1319,15 @@ def _verify_pw(password: str, salt_hex: str, hash_hex: str) -> bool:
     return secrets.compare_digest(hh, (hash_hex or ""))
 
 def load_users() -> dict:
-    """Carga los usuarios desde `USERS_FILE` de forma robusta.
-
-    - Intenta parsear `USERS_FILE`.
-    - Si falla el parseo, intenta restaurar desde `users.bak.json` si existe.
-    - Retorna `{"users": []}` en caso de error.
-    """
     try:
         if USERS_FILE.exists():
-            text = USERS_FILE.read_text(encoding="utf-8")
-            try:
-                return json.loads(text)
-            except Exception:
-                # intentar restaurar desde backup
-                bak = USERS_FILE.with_name(USERS_FILE.stem + ".bak.json")
-                try:
-                    if bak.exists():
-                        return json.loads(bak.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+            return json.loads(USERS_FILE.read_text(encoding="utf-8"))
     except Exception:
         pass
     return {"users": []}
 
 def save_users(obj: dict):
-    """Guarda `obj` en `USERS_FILE` de forma atómica y segura.
-
-    - Escribe en un archivo temporal y luego lo renombra sobre el archivo objetivo (atomic replace).
-    - Mantiene un backup `users.bak.json` del archivo previo si existía.
-    """
-    try:
-        # preparar contenido
-        payload = json.dumps(obj, indent=2, ensure_ascii=False)
-        # archivo temporal en el mismo directorio para que replace sea atómico
-        tmp = USERS_FILE.with_name(USERS_FILE.stem + ".tmp")
-        tmp.write_text(payload, encoding="utf-8")
-
-        # crear backup del anterior si existe
-        try:
-            if USERS_FILE.exists():
-                bak = USERS_FILE.with_name(USERS_FILE.stem + ".bak.json")
-                try:
-                    USERS_FILE.replace(bak)
-                except Exception:
-                    # fallback a copy
-                    try:
-                        bak.write_text(USERS_FILE.read_text(encoding="utf-8"), encoding="utf-8")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # mover tmp -> USERS_FILE (atomic)
-        try:
-            tmp.replace(USERS_FILE)
-        except Exception:
-            # fallback: intentar escribir directamente
-            USERS_FILE.write_text(payload, encoding="utf-8")
-    except Exception:
-        # último recurso (no lanzar) intentar escribir directamente
-        try:
-            USERS_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-
-
-# --- Opcional: helpers para sincronizar usuarios con Google Sheets ---
-def users_to_gsheet(sheet_tab: str = "users") -> bool:
-    """Intenta sincronizar `data/users.json` hacia Google Sheets (pestaña `sheet_tab`).
-
-    Retorna True si tuvo éxito, False en caso de error.
-    Requiere que `USE_GSHEETS` esté True y que las credenciales funcionen.
-    """
-    try:
-        if not USE_GSHEETS:
-            return False
-        users_obj = load_users()
-        users = users_obj.get("users", [])
-        # Convertir a DataFrame y escribir con set_with_dataframe
-        import pandas as _pd
-        df = _pd.DataFrame(users)
-        ws = _gs_open_worksheet(sheet_tab)
-        # escribir todo (incluye encabezado)
-        set_with_dataframe(ws, df, include_index=False, include_column_header=True, resize=True)
-        return True
-    except Exception:
-        return False
-
-
-def load_users_from_gsheet(sheet_tab: str = "users") -> dict | None:
-    """Carga usuarios desde la pestaña `sheet_tab` de Google Sheets y los guarda en `USERS_FILE`.
-
-    Retorna el objeto de usuarios si se pudo leer, o None si falló.
-    """
-    try:
-        if not USE_GSHEETS:
-            return None
-        ws = _gs_open_worksheet(sheet_tab)
-        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
-        if df is None or df.empty:
-            users = []
-        else:
-            users = df.fillna("").to_dict(orient="records")
-        obj = {"users": users}
-        save_users(obj)
-        return obj
-    except Exception:
-        return None
+    USERS_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
 
 def get_user(identifier: str) -> dict | None:
     """Buscar usuario por username o por email (compatibilidad backward).
@@ -3117,6 +3019,3 @@ with tab_hist:
                     do_rerun()
                 except Exception as e:
                     st.error(f"Error al borrar historial: {e}")
-
-
-
