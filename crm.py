@@ -52,16 +52,13 @@ def _gs_credentials():
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
-        sa_info = None
-        import os
-        from google.oauth2.service_account import Credentials
-        env_json = os.environ.get("SECRET")
-        if not env_json:
-            raise RuntimeError("❌ No se encontró la variable SECRET en tu entorno.")
-        sa = json.loads(env_json)
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        return Credentials.from_service_account_info(sa, scopes=scopes)
-
+    import os, json
+    env_json = os.environ.get("SERVICE_ACCOUNT_JSON")
+    if not env_json:
+        raise RuntimeError("❌ No se encontró la variable SERVICE_ACCOUNT_JSON en tu entorno.")
+    sa = json.loads(env_json)
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    return Credentials.from_service_account_info(sa, scopes=scopes)
     # 2) Variable de entorno (útil en deploys/CI)
     if sa_info is None:
         try:
