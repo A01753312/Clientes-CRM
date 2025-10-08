@@ -23,6 +23,7 @@ from google.oauth2.service_account import Credentials
 import streamlit as st
 import shutil
 import altair as alt
+from google.auth.transport.requests import Request
 
 # Paths and data dirs
 DATA_DIR = Path("data")
@@ -98,6 +99,11 @@ def _gs_credentials():
     if sa_info is None:
         with open("service_account.json", "r", encoding="utf-8") as f:
             sa_info = json.load(f)
+    #  --- FIX para Streamlit: normaliza los saltos de línea en la private_key ---
+    if isinstance(sa_info, dict) and "private_key" in sa_info and isinstance(sa_info["private_key"], str):
+        sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+    #  
+
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
     return _GS_CREDS
