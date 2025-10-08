@@ -1841,7 +1841,13 @@ except Exception:
 # ---------- Main UI con pestañas ----------  # NEW
 # Mostrar automáticamente el logo detectado en la carpeta data si existe
 logo_path = find_logo_path()
-col_logo, col_title = st.columns([2, 9])
+try:
+    col_logo, col_title = st.columns([2, 9])
+except Exception:
+    # Fallback seguro: usar contenedores simples si st.columns falla por alguna razón
+    col_logo = st.container()
+    col_title = st.container()
+
 if logo_path and logo_path.exists():
     with col_logo:
         # Cambiado para evitar warning: use_container_width en lugar de use_column_width
