@@ -58,11 +58,21 @@ def _gs_credentials():
         # st.secrets puede ser un dict o contener la key 'service_account'
         s = getattr(st, "secrets", None)
         if s:
-            # aceptar tanto st.secrets as dict completo o st.secrets['service_account']
-            if isinstance(s, dict) and "service_account" in s:
-                cand = s["service_account"]
+            # aceptar varias claves posibles en st.secrets que la gente suele usar
+            # preferencia: 'service_account' -> 'SERVICE_ACCOUNT_JSON' -> 'SERVICE_ACCOUNT_JSON_STR'
+            cand = None
+            if isinstance(s, dict):
+                for key in ("service_account", "SERVICE_ACCOUNT_JSON", "SERVICE_ACCOUNT_JSON_STR", "service_account_json"):
+                    if key in s:
+                        cand = s[key]
+                        break
+                # si no hay una key específica pero st.secrets es directamente el dict con las credenciales
+                if cand is None and all(k in s for k in ("type","project_id","client_email")):
+                    cand = s
             else:
+                # st.secrets podría actuar como objeto parecido a dict o contener la cadena JSON
                 cand = s
+
             if isinstance(cand, dict):
                 sa_info = cand
             elif isinstance(cand, str) and cand.strip():
