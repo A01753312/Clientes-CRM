@@ -40,7 +40,6 @@ GSHEET_HISTTAB = "historial"   # tu pestaña de historial
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
 # Si la variable está vacía (""), se seguirá leyendo `service_account.json` desde disco.
 SERVICE_ACCOUNT_JSON_STR = ""
-
 # CACHING para gspread: minimizar auth / apertura repetida durante reruns
 _GS_CREDS = None
 _GS_GC = None
