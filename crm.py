@@ -52,26 +52,15 @@ def _gs_credentials():
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
-    sa_info = None
-    # 1) Streamlit secrets (cuando despliegas en Streamlit Cloud)
-    try:
-        # st.secrets puede ser un dict o contener la key 'service_account'
-        s = getattr(st, "secrets", None)
-        if s:
-            # aceptar tanto st.secrets as dict completo o st.secrets['service_account']
-            if isinstance(s, dict) and "service_account" in s:
-                cand = s["service_account"]
-            else:
-                cand = s
-            if isinstance(cand, dict):
-                sa_info = cand
-            elif isinstance(cand, str) and cand.strip():
-                try:
-                    sa_info = json.loads(cand)
-                except Exception:
-                    sa_info = None
-    except Exception:
         sa_info = None
+        import os
+        from google.oauth2.service_account import Credentials
+        env_json = os.environ.get("SERVICE_ACCOUNT_JSON")
+        if not env_json:
+            raise RuntimeError("❌ No se encontró la variable SERVICE_ACCOUNT_JSON en tu entorno.")
+        sa = json.loads(env_json)
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        return Credentials.from_service_account_info(sa, scopes=scopes)
 
     # 2) Variable de entorno (útil en deploys/CI)
     if sa_info is None:
