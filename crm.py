@@ -39,8 +39,20 @@ GSHEET_TAB     = "clientes"    # tu pestaña principal
 GSHEET_HISTTAB = "historial"   # tu pestaña de historial
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
 # Si la variable está vacía (""), se seguirá leyendo `service_account.json` desde disco.
-SERVICE_ACCOUNT_JSON_STR = ""
- 
+SERVICE_ACCOUNT_JSON_STR = {
+  "type": "service_account",
+  "project_id": "crmkapitaliza",
+  "private_key_id": "699f2261159ae47c840205fc944194914b04891b",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDSRsZKNXmTkhKB\np6LZcf7tFcvzkyo9Sdk/QURtto+MbcklkrP/q8J2RI+06ADiGHsMEiwEBcY5/3KR\nILZSJxvvGg33O976u/GKZHuWCKI4YMXrSfJ92rgp7LZdeUPTLojNMycVZccG+P3Y\nI9d6r9B5Kr6QMzT9rzewPt1e1rpsKp25D+p4PC2RYFx7ONKSQRb+hAg3mCJ0BF8M\nCK6+wO9xvOFt+I5Qi87QKFRpijmb9VJATQRePi/AOP34nOeW0Si/xqFWAFhvVNCU\n4NJdc0ZdnxDw6stc+w8CDbHFqcmpY2AFa0Xyz/iUWgEm1WynOGh4bJZHeq/PdP1N\nAufIITuLAgMBAAECggEAMiXB1WHSaECuXDBr9HqsxsLrfF/s82fgwSaiGJ4wttdZ\n4LWPatp+CnGIaiboSwN2mObei2kLILrMilLoWEhOb6Phj8Q+BcL7tDsJhDrz4Qkn\nOllM1Pnr8MesqDcq1zriUjmwSPiYUg/gjgLiOTaju7nXb5Fewl9eoxAjACKqm+/Q\n0an5aV1i2iVctxz42sB6HG5YXfgfhxCteXyplpkMmQsk0XBpuTlez3BXRelSOdCM\n8dUy9sRXRwodAAD16OmuxiAzM83f9dvDsviDJaLpjweMHEoD9n4AEVmb14IaQqzp\nhJq2f1uHnbkwbu7r26EYHbfVwWkaw0ywFi3f4Zi3DQKBgQD81fS1izgtMbFvx1RF\n44VW+XxolVOAnAIFllBrlAgEqiyG/8TwCwKeLdHxkX0Ztmz0QBC6cNlwagvekpFG\nGcUtyzSMVLYLlEkEhY6XRJSIRrmRzqFxWZjyMKajUuAfEYAce1Z6+BEL4NHIXad5\n5ma4J4mSeSSNRl4GlDFRkPHjLQKBgQDU6Hc3U/qnTX2XraIARHm+an3xT+vhkHYL\nOs0ewnlg8CwfW3Omf/31EvFKKhfy9TQAXuOXEOxkRyiC4FNba4Lh9Jysj/5UKkkN\n/721s6tylxAIBK3NN36adS0WRpjs6JG7l0/YwvDuVcfBJko20QTcnecoxSAa4Tgg\nH21m41qslwKBgBymGb5gchMc6GAkE/Z/W2KJjoFDOlz+UHRVnfMyqN3ucnExlh0l\nAjzuMDXRKH27YAklIUAe/WRxf7rOnMt2rBMOTXwBNUeGm+d5Qrj9Ol9etDRDV6PC\nZUQ8IwWqpF6g2wVfLGNurG/OH7c2dX2oj8caI8qHE482g/z22cfGRsJZAoGAciUv\nxToA6DFjZC5y7DHKE4yEeRugGw6YOu0Li7I34QDipu0g0+NLBFljg5+Nt3Q+rPQy\nkItCMYD09zXNevXo9btvRBTvBbCl+htiWkg5YvYaYjIf/CYEekrYIVk4I8uMVkaJ\nSG07Pow+zA77OuhU8vK1O+Zzj/WvYYl33fGGa4ECgYEA+NnKNriazfonm8YvvejH\nDTdnfzKSef1X+7gAOLOggQXgO02EaxP/0zKdIr781WriLifaXPKrUubPb8NTrI/M\nqRJ9bjoDQ7JJpr7zxGe0OU7hqSRot3W9rttUNajpJquOm5HeopsgGfgnur7dyxAY\nC+0UUFgZb4tGw5EIivt2HTw=\n-----END PRIVATE KEY-----\n",
+  "client_email": "streamlit-crm@crmkapitaliza.iam.gserviceaccount.com",
+  "client_id": "112180026807912929863",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/streamlit-crm%40crmkapitaliza.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+
 # CACHING para gspread: minimizar auth / apertura repetida durante reruns
 _GS_CREDS = None
 _GS_GC = None
@@ -48,65 +60,52 @@ _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
 def _gs_credentials():
-    """
-    Orden de búsqueda:
-      1) Env vars: SERVICE_ACCOUNT_JSON o SECRET (Codespaces/GitHub)
-      2) st.secrets['service_account'] (Streamlit Cloud/local secrets.toml)
-      3) SERVICE_ACCOUNT_JSON_STR (string embebido)
-      4) service_account.json (archivo local)
-    """
+    """ Carga credenciales locales (service_account.json) y las cachea en memoria."""
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
-
     sa_info = None
+    # 1) Streamlit secrets (cuando despliegas en Streamlit Cloud)
+    try:
+        # st.secrets puede ser un dict o contener la key 'service_account'
+        s = getattr(st, "secrets", None)
+        if s:
+            # aceptar tanto st.secrets as dict completo o st.secrets['service_account']
+            if isinstance(s, dict) and "service_account" in s:
+                cand = s["service_account"]
+            else:
+                cand = s
+            if isinstance(cand, dict):
+                sa_info = cand
+            elif isinstance(cand, str) and cand.strip():
+                try:
+                    sa_info = json.loads(cand)
+                except Exception:
+                    sa_info = None
+    except Exception:
+        sa_info = None
 
-    # 1) Env vars
-    for env_name in ("SERVICE_ACCOUNT_JSON", "SECRET"):
-        env_val = os.environ.get(env_name)
-        if env_val:
-            try:
-                sa_info = json.loads(env_val)
-                break
-            except Exception as e:
-                raise RuntimeError(f"{env_name} no contiene JSON válido: {e}")
-
-    # 2) st.secrets (Streamlit)
+    # 2) Variable de entorno (útil en deploys/CI)
     if sa_info is None:
         try:
-            s = getattr(st, "secrets", None)
-            if s:
-                cand = s.get("service_account") if isinstance(s, dict) else getattr(s, "service_account", None)
-                if isinstance(cand, str) and cand.strip():
-                    sa_info = json.loads(cand)
-                elif isinstance(cand, dict):
-                    sa_info = cand
+            env_val = os.environ.get("SERVICE_ACCOUNT_JSON")
+            if env_val:
+                try:
+                    sa_info = json.loads(env_val)
+                except Exception:
+                    sa_info = None
         except Exception:
-            pass
+            sa_info = None
 
-    # 3) Cadena embebida
+    # 3) Variable en el propio archivo (acepta dict o JSON string)
     if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
         try:
-            sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR) if isinstance(SERVICE_ACCOUNT_JSON_STR, str) else SERVICE_ACCOUNT_JSON_STR
-        except Exception as e:
-            raise RuntimeError(f"SERVICE_ACCOUNT_JSON_STR no es JSON válido: {e}")
-
-    # 4) Archivo local
-    if sa_info is None:
-        try:
-            with open("service_account.json", "r", encoding="utf-8") as f:
-                sa_info = json.load(f)
-        except FileNotFoundError:
-            raise RuntimeError(
-                "No encontré credenciales:\n"
-                "- Define SERVICE_ACCOUNT_JSON (o SECRET) en Codespaces, o\n"
-                "- Configura st.secrets['service_account'], o\n"
-                "- Coloca service_account.json local (y .gitignore)."
-            )
-
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
-    return _GS_CREDS
+            if isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
+                sa_info = SERVICE_ACCOUNT_JSON_STR
+            elif isinstance(SERVICE_ACCOUNT_JSON_STR, str) and SERVICE_ACCOUNT_JSON_STR.strip():
+                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
+        except Exception:
+            sa_info = None
 
     # 4) Fallback a archivo service_account.json en disco
     if sa_info is None:
@@ -1619,102 +1618,6 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-# --- Comprobador de conexión a Google Sheets (botón de diagnóstico) ---
-def gs_check_connection() -> tuple[bool, str, str]:
-    """
-    Intenta autenticar con las credenciales configuradas y abrir la hoja.
-    Retorna (ok, mensaje_corto, detalles) donde `detalles` puede contener
-    información útil para depurar (stack trace corto o sugerencias).
-    """
-    try:
-        if not USE_GSHEETS:
-            return False, "Integración deshabilitada (USE_GSHEETS=False)", "La variable USE_GSHEETS está en False. Activa USE_GSHEETS=True para usar Google Sheets."
-
-        # 1) cargar credenciales
-        try:
-            creds = _gs_credentials()
-        except FileNotFoundError as e:
-            return False, "Archivo de credenciales no encontrado", f"No se encontró 'service_account.json' ni datos válidos en st.secrets/variables de entorno: {e}"
-        except json.JSONDecodeError as e:
-            return False, "Error en JSON de credenciales", f"El JSON de credenciales no es válido: {e}"
-        except Exception as e:
-            return False, "No se pudieron cargar las credenciales", repr(e)
-
-        # intentar autorizar con gspread
-        try:
-            gc = gspread.authorize(creds)
-        except Exception as e:
-            return False, "gspread.authorize falló", repr(e)
-
-        # intentar abrir el spreadsheet
-        try:
-            sh = gc.open_by_key(GSHEET_ID)
-        except gspread.exceptions.SpreadsheetNotFound as e:
-            return False, "Hoja no encontrada / ID inválido", f"Spreadsheet no encontrado (GSHEET_ID inválido o la cuenta no tiene acceso): {e}"
-        except Exception as e:
-            return False, "No se pudo abrir la hoja", repr(e)
-
-        # listar worksheets para validar permisos de lectura
-        try:
-            sheets = sh.worksheets()
-            sheet_names = [ws.title for ws in sheets]
-        except Exception as e:
-            return False, "Autenticado pero sin acceso a pestañas", repr(e)
-
-        # intentar abrir o crear la pestaña principal y escribir una celda de prueba
-        try:
-            try:
-                ws = sh.worksheet(GSHEET_TAB)
-            except gspread.exceptions.WorksheetNotFound:
-                ws = sh.add_worksheet(title=GSHEET_TAB, rows="1000", cols="26")
-            # Escritura de prueba usando la nueva firma: values primero
-            ws.update(values=[["ping", "ok"]], range_name="A1:B1")
-        except Exception as e:
-            return False, "Falló abrir/crear pestaña o escribir", repr(e)
-
-        # intentar obtener email del service account para guiar la corrección de permisos
-        sa_email = None
-        try:
-            sa_email = getattr(creds, "service_account_email", None) or getattr(creds, "_service_account_email", None)
-        except Exception:
-            sa_email = None
-
-        details = f"Pestañas encontradas: {sheet_names}. Escritura de prueba: OK."
-        if sa_email:
-            details += f" Service account: {sa_email}."
-
-        return True, "Conexión a Google Sheets OK", details
-    except Exception as e:
-        return False, "Error inesperado al comprobar conexión", repr(e)
-
-
-with st.sidebar.expander("🔌 Probar Google Sheets", expanded=False):
-    # Diagnostic button suggested by the user: show which source is present and do a write test
-    if st.sidebar.button("🔎 Diagnóstico Google Sheets"):
-        st.write("Tiene SERVICE_ACCOUNT_JSON?", bool(os.environ.get("SERVICE_ACCOUNT_JSON")))
-        st.write("Tiene SECRET?", bool(os.environ.get("SECRET")))
-        try:
-            creds = _gs_credentials()
-            st.success("Credenciales: OK")
-            gc = gspread.authorize(creds)
-            sh = gc.open_by_key(GSHEET_ID)
-            st.success(f"Spreadsheet OK: {sh.title}")
-            try:
-                ws = sh.worksheet(GSHEET_TAB)
-            except gspread.exceptions.WorksheetNotFound:
-                ws = sh.add_worksheet(title=GSHEET_TAB, rows="1000", cols="26")
-                st.info(f"Creada pestaña '{GSHEET_TAB}'.")
-            # Intentar escribir una pequeña marca de tiempo para verificar permisos de escritura
-            try:
-                ws.update(values=[["ping", "ok"]], range_name="A1:B1")
-                st.success("✍️ Escribí A1:B1 correctamente.")
-            except Exception as e:
-                st.error("No pude escribir en la hoja; puede ser un permiso de escritura faltante.")
-                st.exception(e)
-        except Exception as e:
-            st.error("❌ Falló auth/ID/permisos/nombre de pestaña.")
-            st.exception(e)
-
 df_cli = cargar_clientes()
 
 # Opciones base
@@ -1870,13 +1773,7 @@ except Exception:
 # ---------- Main UI con pestañas ----------  # NEW
 # Mostrar automáticamente el logo detectado en la carpeta data si existe
 logo_path = find_logo_path()
-try:
-    col_logo, col_title = st.columns([2, 9])
-except Exception:
-    # Fallback seguro: usar contenedores simples si st.columns falla por alguna razón
-    col_logo = st.container()
-    col_title = st.container()
-
+col_logo, col_title = st.columns([2, 9])
 if logo_path and logo_path.exists():
     with col_logo:
         # Cambiado para evitar warning: use_container_width en lugar de use_column_width
@@ -3119,3 +3016,5 @@ with tab_hist:
                     do_rerun()
                 except Exception as e:
                     st.error(f"Error al borrar historial: {e}")
+
+
