@@ -205,3 +205,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Secrets and credentials
+# Google service account credentials for API access
+service_account.json
+# Streamlit secrets configuration
+.streamlit/secrets.toml
+.streamlit/
+# Generic secrets files
+secrets.json
+*.secret
+*.secrets
