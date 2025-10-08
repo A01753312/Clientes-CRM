@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+python-dateutil
+openpyxl
+xlsxwriter
+gspread
+gspread-dataframe
+google-auth
+altair
