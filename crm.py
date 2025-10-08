@@ -48,17 +48,75 @@ _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
 def _gs_credentials():
-    """ Carga credenciales locales (service_account.json) y las cachea en memoria."""
+    """Carga credenciales desde varias fuentes en orden y las cachea en memoria.
+
+    Orden de búsqueda:
+      1) Variable de entorno SERVICE_ACCOUNT_JSON (debe ser JSON válido)
+      2) streamlit secrets: st.secrets['service_account'] (dict o JSON string)
+      3) constante SERVICE_ACCOUNT_JSON_STR en este archivo (dict o JSON string)
+      4) archivo local `service_account.json`
+
+    Lanza RuntimeError con mensajes claros si ninguna fuente válida está presente.
+    """
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
+
     import os, json
+    sa_info = None
+
+    # 1) Variable de entorno
     env_json = os.environ.get("SERVICE_ACCOUNT_JSON")
-    if not env_json:
-        raise RuntimeError("❌ No se encontró la variable SERVICE_ACCOUNT_JSON en tu entorno.")
-    sa = json.loads(env_json)
+    if env_json:
+        try:
+            sa_info = json.loads(env_json)
+        except Exception as e:
+            raise RuntimeError(f"La variable SERVICE_ACCOUNT_JSON no contiene JSON válido: {e}")
+
+    # 2) Streamlit secrets
+    if sa_info is None:
+        try:
+            import streamlit as st
+            sa = st.secrets.get("service_account", None) if hasattr(st, "secrets") else None
+            if sa:
+                if isinstance(sa, str):
+                    try:
+                        sa_info = json.loads(sa)
+                    except Exception as e:
+                        raise RuntimeError(f"st.secrets['service_account'] contiene JSON inválido: {e}")
+                elif isinstance(sa, dict):
+                    sa_info = sa
+        except Exception:
+            # no bloquear si streamlit no está disponible; seguimos con otras fuentes
+            sa_info = sa_info
+
+    # 3) Constante en el archivo
+    if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
+        try:
+            if isinstance(SERVICE_ACCOUNT_JSON_STR, str):
+                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
+            elif isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
+                sa_info = SERVICE_ACCOUNT_JSON_STR
+        except Exception as e:
+            raise RuntimeError(f"SERVICE_ACCOUNT_JSON_STR en el archivo no contiene JSON válido: {e}")
+
+    # 4) Archivo local
+    if sa_info is None:
+        try:
+            with open("service_account.json", "r", encoding="utf-8") as f:
+                sa_info = json.load(f)
+        except FileNotFoundError:
+            # Ninguna fuente proporcionó credenciales
+            raise RuntimeError(
+                "No encontré credenciales de service account. Proporciona SERVICE_ACCOUNT_JSON (env), "
+                "st.secrets['service_account'], SERVICE_ACCOUNT_JSON_STR o el archivo service_account.json."
+            )
+        except Exception as e:
+            raise RuntimeError(f"No pude leer service_account.json: {e}")
+
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    return Credentials.from_service_account_info(sa, scopes=scopes)
+    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
+    return _GS_CREDS
     # 2) Variable de entorno (útil en deploys/CI)
     if sa_info is None:
         try:
