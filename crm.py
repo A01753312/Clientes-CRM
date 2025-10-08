@@ -48,57 +48,48 @@ _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
 def _gs_credentials():
-    """Carga credenciales desde varias fuentes en orden y las cachea en memoria.
-
+    """
     Orden de búsqueda:
-      1) Variable de entorno SERVICE_ACCOUNT_JSON (debe ser JSON válido)
-      2) streamlit secrets: st.secrets['service_account'] (dict o JSON string)
-      3) constante SERVICE_ACCOUNT_JSON_STR en este archivo (dict o JSON string)
-      4) archivo local `service_account.json`
-
-    Lanza RuntimeError con mensajes claros si ninguna fuente válida está presente.
+      1) Env vars: SERVICE_ACCOUNT_JSON o SECRET (Codespaces/GitHub)
+      2) st.secrets['service_account'] (Streamlit Cloud/local secrets.toml)
+      3) SERVICE_ACCOUNT_JSON_STR (string embebido)
+      4) service_account.json (archivo local)
     """
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
 
-    import os, json
     sa_info = None
 
-    # 1) Variable de entorno
-    env_json = os.environ.get("SERVICE_ACCOUNT_JSON")
-    if env_json:
-        try:
-            sa_info = json.loads(env_json)
-        except Exception as e:
-            raise RuntimeError(f"La variable SERVICE_ACCOUNT_JSON no contiene JSON válido: {e}")
+    # 1) Env vars
+    for env_name in ("SERVICE_ACCOUNT_JSON", "SECRET"):
+        env_val = os.environ.get(env_name)
+        if env_val:
+            try:
+                sa_info = json.loads(env_val)
+                break
+            except Exception as e:
+                raise RuntimeError(f"{env_name} no contiene JSON válido: {e}")
 
-    # 2) Streamlit secrets
+    # 2) st.secrets (Streamlit)
     if sa_info is None:
         try:
-            import streamlit as st
-            sa = st.secrets.get("service_account", None) if hasattr(st, "secrets") else None
-            if sa:
-                if isinstance(sa, str):
-                    try:
-                        sa_info = json.loads(sa)
-                    except Exception as e:
-                        raise RuntimeError(f"st.secrets['service_account'] contiene JSON inválido: {e}")
-                elif isinstance(sa, dict):
-                    sa_info = sa
+            s = getattr(st, "secrets", None)
+            if s:
+                cand = s.get("service_account") if isinstance(s, dict) else getattr(s, "service_account", None)
+                if isinstance(cand, str) and cand.strip():
+                    sa_info = json.loads(cand)
+                elif isinstance(cand, dict):
+                    sa_info = cand
         except Exception:
-            # no bloquear si streamlit no está disponible; seguimos con otras fuentes
-            sa_info = sa_info
+            pass
 
-    # 3) Constante en el archivo
+    # 3) Cadena embebida
     if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
         try:
-            if isinstance(SERVICE_ACCOUNT_JSON_STR, str):
-                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
-            elif isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
-                sa_info = SERVICE_ACCOUNT_JSON_STR
+            sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR) if isinstance(SERVICE_ACCOUNT_JSON_STR, str) else SERVICE_ACCOUNT_JSON_STR
         except Exception as e:
-            raise RuntimeError(f"SERVICE_ACCOUNT_JSON_STR en el archivo no contiene JSON válido: {e}")
+            raise RuntimeError(f"SERVICE_ACCOUNT_JSON_STR no es JSON válido: {e}")
 
     # 4) Archivo local
     if sa_info is None:
@@ -106,38 +97,16 @@ def _gs_credentials():
             with open("service_account.json", "r", encoding="utf-8") as f:
                 sa_info = json.load(f)
         except FileNotFoundError:
-            # Ninguna fuente proporcionó credenciales
             raise RuntimeError(
-                "No encontré credenciales de service account. Proporciona SERVICE_ACCOUNT_JSON (env), "
-                "st.secrets['service_account'], SERVICE_ACCOUNT_JSON_STR o el archivo service_account.json."
+                "No encontré credenciales:\n"
+                "- Define SERVICE_ACCOUNT_JSON (o SECRET) en Codespaces, o\n"
+                "- Configura st.secrets['service_account'], o\n"
+                "- Coloca service_account.json local (y .gitignore)."
             )
-        except Exception as e:
-            raise RuntimeError(f"No pude leer service_account.json: {e}")
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
     return _GS_CREDS
-    # 2) Variable de entorno (útil en deploys/CI)
-    if sa_info is None:
-        try:
-            env_val = os.environ.get("SERVICE_ACCOUNT_JSON")
-            if env_val:
-                try:
-                    sa_info = json.loads(env_val)
-                except Exception:
-                    sa_info = None
-        except Exception:
-            sa_info = None
-
-    # 3) Variable en el propio archivo (acepta dict o JSON string)
-    if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
-        try:
-            if isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
-                sa_info = SERVICE_ACCOUNT_JSON_STR
-            elif isinstance(SERVICE_ACCOUNT_JSON_STR, str) and SERVICE_ACCOUNT_JSON_STR.strip():
-                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
-        except Exception:
-            sa_info = None
 
     # 4) Fallback a archivo service_account.json en disco
     if sa_info is None:
@@ -1720,26 +1689,31 @@ def gs_check_connection() -> tuple[bool, str, str]:
 
 
 with st.sidebar.expander("🔌 Probar Google Sheets", expanded=False):
-    st.caption("Diagnóstico rápido de la conexión a Google Sheets")
-    if st.button("Probar conexión Google Sheets", key="btn_test_gs"):
-        ok, msg, details = gs_check_connection()
-        st.session_state["gs_check_result"] = (ok, msg, details)
-
-    if "gs_check_result" in st.session_state:
-        ok, msg, details = st.session_state.get("gs_check_result", (False, "No ejecutado", ""))
-        if ok:
-            st.success(msg)
-            st.write(details)
-        else:
-            st.error(msg)
-            with st.expander("Detalles del error / sugerencias"):
-                st.text(details)
-                st.markdown("- Revisa que el archivo `service_account.json` exista en la raíz del proyecto o que `st.secrets['service_account']` / la variable de entorno `SERVICE_ACCOUNT_JSON` estén configuradas correctamente.")
-                st.markdown("- Comparte la hoja de cálculo con el correo del service account (si existe) para que tenga permiso de lectura/escritura.")
-                st.markdown("- Verifica que `GSHEET_ID` sea el id correcto de la hoja (parte en la URL entre /d/ y /edit).")
-                st.markdown("- Asegura que la API de Google Sheets esté habilitada en el proyecto GCP y que las credenciales correspondan a esa API.")
-                st.markdown("- Comprueba tu conexión a internet y posibles proxies/firewalls.")
-                st.markdown("- Si el error menciona autenticación, revisa que el JSON del service account contenga las claves esperadas (client_email, private_key, etc.).")
+    # Diagnostic button suggested by the user: show which source is present and do a write test
+    if st.sidebar.button("🔎 Diagnóstico Google Sheets"):
+        st.write("Tiene SERVICE_ACCOUNT_JSON?", bool(os.environ.get("SERVICE_ACCOUNT_JSON")))
+        st.write("Tiene SECRET?", bool(os.environ.get("SECRET")))
+        try:
+            creds = _gs_credentials()
+            st.success("Credenciales: OK")
+            gc = gspread.authorize(creds)
+            sh = gc.open_by_key(GSHEET_ID)
+            st.success(f"Spreadsheet OK: {sh.title}")
+            try:
+                ws = sh.worksheet(GSHEET_TAB)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = sh.add_worksheet(title=GSHEET_TAB, rows="1000", cols="26")
+                st.info(f"Creada pestaña '{GSHEET_TAB}'.")
+            # Intentar escribir una pequeña marca de tiempo para verificar permisos de escritura
+            try:
+                ws.update(values=[["ping", "ok"]], range_name="A1:B1")
+                st.success("✍️ Escribí A1:B1 correctamente.")
+            except Exception as e:
+                st.error("No pude escribir en la hoja; puede ser un permiso de escritura faltante.")
+                st.exception(e)
+        except Exception as e:
+            st.error("❌ Falló auth/ID/permisos/nombre de pestaña.")
+            st.exception(e)
 
 df_cli = cargar_clientes()
 
