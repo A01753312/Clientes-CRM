@@ -47,60 +47,18 @@ _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
 def _gs_credentials():
-    """ Carga credenciales locales (service_account.json) y las cachea en memoria."""
-    global _GS_CREDS
-    if _GS_CREDS is not None:
-        return _GS_CREDS
-    sa_info = None
-    # 1) Streamlit secrets (cuando despliegas en Streamlit Cloud)
-    try:
-        # st.secrets puede ser un dict o contener la key 'service_account'
-        s = getattr(st, "secrets", None)
-        if s:
-            # aceptar tanto st.secrets as dict completo o st.secrets['service_account']
-            if isinstance(s, dict) and "service_account" in s:
-                cand = s["service_account"]
-            else:
-                cand = s
-            if isinstance(cand, dict):
-                sa_info = cand
-            elif isinstance(cand, str) and cand.strip():
-                try:
-                    sa_info = json.loads(cand)
-                except Exception:
-                    sa_info = None
-    except Exception:
-        sa_info = None
-
-    # 2) Variable de entorno (útil en deploys/CI)
-    if sa_info is None:
-        try:
-            env_val = os.environ.get("SERVICE_ACCOUNT_JSON")
-            if env_val:
-                try:
-                    sa_info = json.loads(env_val)
-                except Exception:
-                    sa_info = None
-        except Exception:
-            sa_info = None
-
-    # 3) Variable en el propio archivo (acepta dict o JSON string)
-    if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
-        try:
-            if isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
-                sa_info = SERVICE_ACCOUNT_JSON_STR
-            elif isinstance(SERVICE_ACCOUNT_JSON_STR, str) and SERVICE_ACCOUNT_JSON_STR.strip():
-                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
-        except Exception:
-            sa_info = None
-
-    # 4) Fallback a archivo service_account.json en disco
-    if sa_info is None:
-        with open("service_account.json", "r", encoding="utf-8") as f:
-            sa_info = json.load(f)
+    import json, streamlit as st
+    sa = st.secrets.get("service_account", None)
+    if sa is None:
+        raise RuntimeError(
+            "No encontré [service_account] en secrets. "
+            "Abre Settings → Secrets y pega tu JSON en formato TOML bajo [service_account]."
+        )
+    # Puede venir como dict (ideal) o string JSON
+    if isinstance(sa, str):
+        sa = json.loads(sa)
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
-    return _GS_CREDS
+    return Credentials.from_service_account_info(sa, scopes=scopes)
 
 def _gs_open_worksheet(tab_name: str):
     """Abre una pestaña; si no existe, la crea. Usa cache a nivel de módulo para evitar re-autenticación."""
