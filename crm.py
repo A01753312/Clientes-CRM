@@ -1637,6 +1637,17 @@ def gs_check_connection() -> tuple[bool, str, str]:
         except Exception as e:
             return False, "Autenticado pero sin acceso a pestañas", repr(e)
 
+        # intentar abrir o crear la pestaña principal y escribir una celda de prueba
+        try:
+            try:
+                ws = sh.worksheet(GSHEET_TAB)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = sh.add_worksheet(title=GSHEET_TAB, rows="1000", cols="26")
+            # Escritura de prueba usando la nueva firma: values primero
+            ws.update(values=[["ping", "ok"]], range_name="A1:B1")
+        except Exception as e:
+            return False, "Falló abrir/crear pestaña o escribir", repr(e)
+
         # intentar obtener email del service account para guiar la corrección de permisos
         sa_email = None
         try:
@@ -1644,7 +1655,7 @@ def gs_check_connection() -> tuple[bool, str, str]:
         except Exception:
             sa_email = None
 
-        details = f"Pestañas encontradas: {sheet_names}."
+        details = f"Pestañas encontradas: {sheet_names}. Escritura de prueba: OK."
         if sa_email:
             details += f" Service account: {sa_email}."
 
