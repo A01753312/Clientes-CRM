@@ -1,0 +1,3 @@
+id,nombre,sucursal,asesor,fecha_ingreso,fecha_dispersion,estatus,monto_propuesta,monto_final,segundo_estatus,observaciones,score,telefono,correo,analista,fuente
+C1000,Sebastian Toro,mundo E,Martha Ortiz,2025-10-05,2025-10-06,PROPUESTA,15000,14500,,Prueba de sucursal,720,555111222,ana@example.com,Claudia,Facebook
+C1001,Bandian Torres,TOXQUI,Martha Ortiz,2025-10-08,2025-10-08,DISPERSADO,,,,,,,,,
