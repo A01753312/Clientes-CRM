@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "user": "VioletaAvila",
+      "role": "admin",
+      "salt": "31413e2d902a86cc397c2f9c07ef130d",
+      "hash": "28e6a5b93532cf785752ab1b769d4c53abafb0df64be592860d53066d1424432"
+    }
+  ]
+}
