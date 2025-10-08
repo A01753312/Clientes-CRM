@@ -39,19 +39,7 @@ GSHEET_TAB     = "clientes"    # tu pestaña principal
 GSHEET_HISTTAB = "historial"   # tu pestaña de historial
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
 # Si la variable está vacía (""), se seguirá leyendo `service_account.json` desde disco.
-SERVICE_ACCOUNT_JSON_STR = {
-  "type": "service_account",
-  "project_id": "crmkapitaliza",
-  "private_key_id": "48748fbac515e41d538a283acf30aeff04ee3e29",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDbuqe3BUqG34pN\n0P5Y48yZlhoU3hC0ulfnDrueaQ5/UY9uTnYEUBUAMxvTDkNTMA5hdkgQgI9wMIRc\nMsMZdCrjk0zdx8/ZqRbjjsYuFU/qwhPbkf+jt5TVnrc9ejjruXEbqv0zduPty40Y\nTJ5w4wh4ZWn0jZzYTNz2QS6zbkH+ouB3/bQQueqiCR+onLFDaW7ZsSIH/sYK52nh\nAFN8ydX4Ya3DYoo/ogHtM+1Ar/az5sjCO3ODvjUiG+Vy+2L54e537af1Mp1X4h6U\nln/qfY7vAF+geTq0+m7q+mSgvyMqk2dQmRjTq+530F2ghbS63slvMlxsi8ZGZ5or\nKWGDpQ5HAgMBAAECggEAN2vC9aS+AXrMlYgLPzxl1K9JcM36BLujhEHxDKmO4Iof\n1UCw/7F7Ooupjvhf/tF2Lxr4XkEu7KswF1kuYHMuhiwXDTFiuZGulkLitajmeV3u\nSElw40hgn+jiav0y8jHZ15KvPpXUM5xNwD1DEVISRtu9d9NoJh5s9SfHsbYzqxfO\nQ/oMUuuynr/3jk38CDjyDiT6cGicgZITRnCVHe5ZgGdFzuKLQ4jWFNcLBtkdOPxC\n0QZnakYcU48VwhScEB3KXT1cSX/iMfSvAt5jPkxvIU/c+JdFORlS/F3r7WO4vUij\n9O2mH0kEHlQPjSfIUP8tSErVGdnx98f6X1dN07HFwQKBgQDvqJ5o5kkb7ydOyydG\nrB0xlGiWmiYyfaFdCSPyAv4TYFmijZVPV/JlaV4X0tUDC03A8xvOrppZaDMNxMty\nibu50PObjTjyDdsMlQWbP85TeHVhScAjsX/+gVf5F9Igf5hwHxndKsRe74gjEEDq\naupMuzr2jGz9uFZD7Ftbiqrr0QKBgQDqtieRFwz0U0GdGnQcOT7in7YfH19kWDy2\nwi5oIJFx5R0aUrHoowvLwVz5q51/kQjZg5cSn/cPhRO4mHAViJ73PvB8HbJvBCrs\nV0M9XZhh3+6Z+dv4MFH0bbV+16LbULtTaNqHMNzaWD0caDLdUXsIptTm/tSKpGab\nHG2885AWlwKBgGwolD1RWMNTnlDQHIynlpFOohj9vqlgy1daja9mLFaAUFOtRCpH\nzax47i8gRmQWUOP4k58ma6BYB1p6azro8CD/LUIRbRbIrAg0pRAYrrw7C/Z5O06g\nh9xLcXGIj5t9GkXXs2t+JpuVzMHOTw28bLtucEDexT2IWN5UqDJbFaJRAoGAUWS/\nzeHnfScOHvQYhd0YQLDQEHTpuLucumgWfceliJDCielZhupb4dn5ax+na6CZKA0p\nK61LmRc2IpLCc8VAE0/BR9loknUoiXMtfy9g87gbX0w1ixj+orwU75rKADI79A3t\nkmpQfGuTLbG4yeVCvFpWhJCkljuy1WGDcL4qHpsCgYEAqW5ELRvZxppwR8E94Wi3\nt6jcUJKoZncvXCuFyF6ycrYapzffYHpvLZVPWR+2TM0z/QhoiXfk6jgE0kndbEqu\nNWw+RKsLq6lHy90gStzkOhdT4hs7JnE2tA4S/KIsXLA92Qduz4+th1Q2gDGslkRu\nImE26Vz3G/dxk8Xt6QO1Zgw=\n-----END PRIVATE KEY-----\n",
-  "client_email": "streamlit-crm@crmkapitaliza.iam.gserviceaccount.com",
-  "client_id": "112180026807912929863",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/streamlit-crm%40crmkapitaliza.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
+SERVICE_ACCOUNT_JSON_STR = ""
 # CACHING para gspread: minimizar auth / apertura repetida durante reruns
 _GS_CREDS = None
 _GS_GC = None
