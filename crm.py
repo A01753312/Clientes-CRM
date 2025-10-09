@@ -874,12 +874,21 @@ def cargar_clientes() -> pd.DataFrame:
             if df is None or df.empty:
                 df = pd.DataFrame(columns=COLUMNS)
             else:
-                # Mensaje temporal (se oculta automáticamente si st.toast está disponible)
+                # Mensaje temporal: mostrar solo la primera vez por sesión
                 try:
-                    st.toast(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                    if not st.session_state.get('gs_load_msg_shown', False):
+                        try:
+                            st.toast(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                        except Exception:
+                            # Fallback seguro si st.toast no existe
+                            st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                        st.session_state['gs_load_msg_shown'] = True
                 except Exception:
-                    # Fallback seguro si st.toast no existe
-                    st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                    # No romper si session_state no está disponible
+                    try:
+                        st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                    except Exception:
+                        pass
                 
                 
             df = df.fillna("")
