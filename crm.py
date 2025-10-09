@@ -53,6 +53,9 @@ GSHEET_HISTTAB = "historial"   # tu pestaña de historial
 # una carpeta raíz específica en Drive, pega aquí su ID. Si está vacío,
 # se crearán en el nivel raíz del service account.
 DRIVE_ROOT_FOLDER_ID = "1SrYM47mBRzOwr59dbCdsEXJyzf9Pbd_V"
+# === CONFIGURACIÓN GOOGLE SHARED DRIVE ===
+DRIVE_SHARED_DRIVE_ID = "0ADtqpPH_M13HUk9PVA"  # ID de tu Shared Drive
+USE_SHARED_DRIVE = True
 
 
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
@@ -91,7 +94,7 @@ def _gs_credentials():
                 
                 scopes = [
                     "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
+                    "https://www.googleapis.com/auth/drive"  # NUEVO scope para Drive
                 ]
                 try:
                     _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
@@ -109,7 +112,7 @@ def _gs_credentials():
                     sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
                 scopes = [
                     "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
+                    "https://www.googleapis.com/auth/drive"  # NUEVO scope para Drive
                 ]
                 try:
                     _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
@@ -180,6 +183,128 @@ def get_drive_service():
     except Exception as e:
         st.error(f"❌ Error creando servicio Drive: {e}")
         return None
+
+
+def create_shared_drive_folder(folder_name, parent_id=None):
+    """Crea una carpeta en Google Shared Drive"""
+    service = get_drive_service()
+    if service is None:
+        return None
+
+    try:
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        if parent_id:
+            file_metadata['parents'] = [parent_id]
+        
+        folder = service.files().create(
+            body=file_metadata,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
+        
+        return folder.get('id')
+    except Exception as e:
+        st.error(f"❌ Error creando carpeta en Shared Drive: {e}")
+        return None
+
+
+def find_or_create_client_shared_folder(client_id, client_name):
+    """Encuentra o crea la carpeta del cliente en Shared Drive"""
+    service = get_drive_service()
+    if service is None:
+        return None
+    
+    try:
+        folder_name = f"{client_id}_{safe_name(client_name)}"
+        
+        # Buscar carpeta existente en Shared Drive
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        
+        results = service.files().list(
+            q=query,
+            fields="files(id, name)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            corpora='drive',
+            driveId=DRIVE_SHARED_DRIVE_ID
+        ).execute()
+        
+        folders = results.get('files', [])
+        
+        if folders:
+            return folders[0]['id']
+        else:
+            # Crear nueva carpeta en la raíz del Shared Drive
+            return create_shared_drive_folder(folder_name, DRIVE_SHARED_DRIVE_ID)
+            
+    except Exception as e:
+        st.error(f"❌ Error buscando/creando carpeta cliente en Shared Drive: {e}")
+        return None
+
+
+def upload_to_shared_drive(file_data, file_name, folder_id):
+    """Sube un archivo a Google Shared Drive"""
+    service = get_drive_service()
+    if service is None:
+        return None
+    
+    try:
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id]
+        }
+        
+        # Convertir a bytes si es necesario
+        if hasattr(file_data, 'getvalue'):
+            file_bytes = file_data.getvalue()
+        elif isinstance(file_data, bytes):
+            file_bytes = file_data
+        else:
+            file_bytes = file_data
+        
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_bytes), 
+            mimetype='application/octet-stream',
+            resumable=True
+        )
+        
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id,webViewLink,name,createdTime',
+            supportsAllDrives=True
+        ).execute()
+        
+        return file
+    except Exception as e:
+        st.error(f"❌ Error subiendo archivo a Shared Drive: {e}")
+        return None
+
+
+def list_shared_drive_files(folder_id):
+    """Lista archivos de una carpeta en Shared Drive"""
+    service = get_drive_service()
+    if service is None:
+        return []
+    
+    try:
+        query = f"'{folder_id}' in parents and trashed=false"
+        
+        results = service.files().list(
+            q=query,
+            fields="files(id, name, webViewLink, createdTime, mimeType, size)",
+            orderBy="createdTime desc",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        
+        return results.get('files', [])
+    except Exception as e:
+        st.error(f"❌ Error listando archivos de Shared Drive: {e}")
+        return []
 
 
 def create_drive_folder(folder_name, parent_id=None):
@@ -1286,6 +1411,113 @@ def guardar_clientes(df: pd.DataFrame):
             pass
 
 df_cli = cargar_clientes()
+
+
+def verify_shared_drive_access():
+    """Verifica que tenemos acceso al Shared Drive"""
+    service = get_drive_service()
+    if service is None:
+        return False
+    
+    try:
+        # Intentar obtener información del Shared Drive
+        drive_info = service.drives().get(driveId=DRIVE_SHARED_DRIVE_ID).execute()
+        st.success(f"✅ Acceso a Shared Drive confirmado: {drive_info.get('name', 'CRM Documentos')}")
+        return True
+    except Exception as e:
+        st.error(f"❌ Error accediendo al Shared Drive: {e}")
+        st.info("""
+        **Para solucionar esto:**
+        1. Ve a tu Shared Drive: https://drive.google.com/drive/u/1/folders/0ADtqpPH_M13HUk9PVA
+        2. Haz clic en "Compartir"
+        3. Agrega este email: `streamlit-crm@crmkapitaliza.iam.gserviceaccount.com`
+        4. Dale permisos de **Editor** o **Administrador de contenido**
+        """)
+        return False
+
+
+def subir_docs_drive(cid: str, files, prefijo: str = "") -> list:
+    """
+    Sube documentos a Google Shared Drive
+    """
+    if not cid:
+        return []
+    
+    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
+    
+    # Obtener o crear carpeta del cliente en Shared Drive
+    folder_id = find_or_create_client_shared_folder(cid, nombre_cliente)
+    if not folder_id:
+        st.error("❌ No se pudo crear/obtener la carpeta en Shared Drive")
+        return []
+    
+    saved_files = []
+    files_iter = files if hasattr(files, '__iter__') and not isinstance(files, (bytes, bytearray)) else [files]
+    
+    for f in files_iter:
+        try:
+            fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
+            target_name = safe_name(f"{prefijo}{fname}")
+            
+            # Leer datos del archivo
+            if hasattr(f, "getbuffer"):
+                data = f.getbuffer()
+            elif hasattr(f, "read"):
+                data = f.read()
+            else:
+                continue
+            
+            # Subir a Shared Drive
+            drive_file = upload_to_shared_drive(data, target_name, folder_id)
+            if drive_file:
+                saved_files.append({
+                    'name': drive_file.get('name'),
+                    'drive_id': drive_file.get('id'),
+                    'url': drive_file.get('webViewLink'),
+                    'created_time': drive_file.get('createdTime'),
+                    'storage': 'shared_drive'
+                })
+                
+        except Exception as e:
+            st.error(f"❌ Error subiendo {fname} a Shared Drive: {e}")
+            continue
+    
+    return saved_files
+
+
+def listar_docs_drive(cid: str):
+    """
+    Lista documentos del cliente desde Shared Drive
+    """
+    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
+    
+    folder_id = find_or_create_client_shared_folder(cid, nombre_cliente)
+    if not folder_id:
+        return []
+    
+    files = list_shared_drive_files(folder_id)
+    
+    # Agregar información de storage
+    for file in files:
+        file['storage'] = 'shared_drive'
+    
+    return files
+
+
+def initialize_shared_drive():
+    """Inicializa y verifica el acceso al Shared Drive"""
+    if USE_GSHEETS and USE_SHARED_DRIVE and DRIVE_SHARED_DRIVE_ID:
+        if verify_shared_drive_access():
+            st.session_state.shared_drive_accessible = True
+            # Crear carpeta de estructura si no existe
+            create_shared_drive_folder("CRM_Clientes", DRIVE_SHARED_DRIVE_ID)
+        else:
+            st.session_state.shared_drive_accessible = False
+            st.warning("⚠️ No se pudo acceder al Shared Drive. Los documentos se guardarán localmente.")
+
+
+# Inicialización solicitada por el usuario
+initialize_shared_drive()
 
 # Inicializar verificación de Drive (establece st.session_state.drive_accessible)
 def verify_drive_access() -> bool:
