@@ -83,11 +83,30 @@ def git_auto_commit(backup_zip: Path = None) -> str:
         if result_commit.returncode != 0:
             return f"❌ Error en commit: {result_commit.stderr}"
 
-        result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
-        if result_push.returncode == 0:
-            return f"✅ Backup automático: {commit_message}"
-        else:
-            return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
+        # Intentar push. Si existe GITHUB_TOKEN en el entorno, usar URL autenticada
+        try:
+            token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_PAT')
+            if token:
+                # Obtener URL remota y construir una URL autenticada temporal
+                rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
+                remote_url = (rem.stdout or '').strip()
+                if remote_url.startswith('https://'):
+                    auth_url = remote_url.replace('https://', f'https://{token}@', 1)
+                    # Empujar a la rama actual usando la URL autenticada
+                    br = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_path, capture_output=True, text=True)
+                    branch = (br.stdout or 'main').strip()
+                    result_push = subprocess.run(['git', 'push', auth_url, f'HEAD:refs/heads/{branch}'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+                else:
+                    result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+            else:
+                result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+
+            if result_push.returncode == 0:
+                return f"✅ Backup automático: {commit_message}"
+            else:
+                return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
+        except Exception as e:
+            return f"⚠️ Commit ok, pero push falló: {str(e)}"
     except subprocess.TimeoutExpired:
         return "❌ Timeout en operación git"
     except Exception as e:
