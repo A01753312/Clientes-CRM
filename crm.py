@@ -24,6 +24,9 @@ import streamlit as st
 import shutil
 import altair as alt
 from google.auth.transport.requests import Request
+import subprocess
+import time
+import threading
 
 # Debug info removed by user request (sidebar debug block intentionally deleted)
 
@@ -34,6 +37,77 @@ DOCS_DIR = DATA_DIR / "docs"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CLIENTES_CSV = DATA_DIR / "clientes.csv"
 CLIENTES_XLSX = DATA_DIR / "clientes.xlsx"
+
+# Backups local en el Codespace
+BACKUPS_DIR = Path("backups")
+BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+
+def create_backup_zip() -> Path:
+    """Crea un ZIP con la carpeta `data/` y retorna el path del ZIP."""
+    try:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = BACKUPS_DIR / f"backup_{ts}"
+        zip_path = shutil.make_archive(str(base), 'zip', root_dir=str(DATA_DIR))
+        return Path(zip_path)
+    except Exception:
+        return None
+
+def git_auto_commit(backup_zip: Path = None) -> str:
+    """Hace commit y push automático de los datos del CRM y del ZIP de backup opcional.
+    Retorna un mensaje con el resultado.
+    """
+    try:
+        repo_path = Path(__file__).parent
+        paths_to_add = [str(CLIENTES_CSV), str(CLIENTES_XLSX), str(DOCS_DIR)]
+        if backup_zip:
+            paths_to_add.append(str(backup_zip))
+
+        # git add
+        result_add = subprocess.run(['git', 'add', *paths_to_add], cwd=repo_path, capture_output=True, text=True, timeout=30)
+        if result_add.returncode != 0:
+            return f"❌ Error agregando archivos: {result_add.stderr}"
+
+        commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        result_commit = subprocess.run(['git', 'commit', '-m', commit_message], cwd=repo_path, capture_output=True, text=True, timeout=30)
+
+        if "nothing to commit" in (result_commit.stdout or "") or "nada para hacer commit" in (result_commit.stdout or ""):
+            return "⏭️ Sin cambios para commit"
+
+        if result_commit.returncode != 0:
+            return f"❌ Error en commit: {result_commit.stderr}"
+
+        result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+        if result_push.returncode == 0:
+            return f"✅ Backup automático: {commit_message}"
+        else:
+            return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
+    except subprocess.TimeoutExpired:
+        return "❌ Timeout en operación git"
+    except Exception as e:
+        return f"❌ Error general: {str(e)}"
+
+
+def _periodic_backup_loop(interval_seconds: int = 3600):
+    """Loop que crea un ZIP de backup y hace git_auto_commit cada `interval_seconds` segundos."""
+    while True:
+        try:
+            zip_path = create_backup_zip()
+            res = git_auto_commit(zip_path)
+            # actualizar st.session_state si existe
+            try:
+                st.session_state['last_auto_backup'] = time.time()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        time.sleep(interval_seconds)
+
+# Iniciar worker de backups en background (daemon)
+try:
+    _backup_thread = threading.Thread(target=_periodic_backup_loop, args=(3600,), daemon=True)
+    _backup_thread.start()
+except Exception:
+    pass
 
 # === CONFIGURACIÓN GOOGLE SHEETS ===
 USE_GSHEETS = True   # pon False si quieres trabajar sólo local
