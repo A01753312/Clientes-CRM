@@ -25,6 +25,23 @@ import shutil
 import altair as alt
 from google.auth.transport.requests import Request
 
+# Debug info in sidebar (Streamlit Cloud troubleshooting)
+try:
+    st.sidebar.markdown("### 🔍 Debug Info")
+    try:
+        if hasattr(st, "secrets"):
+            secrets_loaded = bool(st.secrets)
+            st.sidebar.write(f"Secrets cargados: {'✅' if secrets_loaded else '❌'}")
+            if secrets_loaded:
+                st.sidebar.write(f"Tipo: {st.secrets.get('type', 'No encontrado')}")
+                st.sidebar.write(f"Project ID: {st.secrets.get('project_id', 'No encontrado')}")
+                st.sidebar.write(f"Client email: {st.secrets.get('client_email', 'No encontrado')}")
+    except Exception:
+        pass
+except Exception:
+    # si Streamlit no está inicializado aún, simplemente ignorar
+    pass
+
 # Paths and data dirs
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,99 +65,91 @@ _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
 def _gs_credentials():
-    """ Carga credenciales locales (service_account.json) y las cachea en memoria."""
+    """Carga credenciales desde Streamlit secrets - Versión mejorada para Streamlit Cloud"""
     global _GS_CREDS
     if _GS_CREDS is not None:
         return _GS_CREDS
-    sa_info = None
-    # 1) Streamlit secrets (cuando despliegas en Streamlit Cloud)
     try:
-        # st.secrets puede ser un dict o contener la key 'service_account'
-        s = getattr(st, "secrets", None)
-        if s:
-            # aceptar varias claves posibles en st.secrets que la gente suele usar
-            # preferencia: 'service_account' -> 'SERVICE_ACCOUNT_JSON' -> 'SERVICE_ACCOUNT_JSON_STR'
-            cand = None
-            if isinstance(s, dict):
-                for key in ("service_account", "SERVICE_ACCOUNT_JSON", "SERVICE_ACCOUNT_JSON_STR", "service_account_json"):
-                    if key in s:
-                        cand = s[key]
-                        break
-                # si no hay una key específica pero st.secrets es directamente el dict con las credenciales
-                if cand is None and all(k in s for k in ("type","project_id","client_email")):
-                    cand = s
-            else:
-                # st.secrets podría actuar como objeto parecido a dict o contener la cadena JSON
-                cand = s
-
-            if isinstance(cand, dict):
-                sa_info = cand
-            elif isinstance(cand, str) and cand.strip():
-                try:
-                    sa_info = json.loads(cand)
-                except Exception:
-                    sa_info = None
-    except Exception:
-        sa_info = None
-
-    # 2) Variable de entorno (útil en deploys/CI)
-    if sa_info is None:
-        try:
-            env_val = os.environ.get("SERVICE_ACCOUNT_JSON")
-            if env_val:
-                try:
-                    sa_info = json.loads(env_val)
-                except Exception:
-                    sa_info = None
-        except Exception:
+        # 1) Streamlit Secrets (PRIMARIO para Streamlit Cloud)
+        if hasattr(st, "secrets"):
+            secrets_dict = dict(st.secrets)
+            
+            # Buscar en diferentes estructuras posibles
             sa_info = None
-
-    # 3) Variable en el propio archivo (acepta dict o JSON string)
-    if sa_info is None and SERVICE_ACCOUNT_JSON_STR:
+            
+            # Opción 1: Secrets directamente en el nivel raíz
+            if all(k in secrets_dict for k in ["type", "project_id", "private_key_id", "private_key"]):
+                sa_info = secrets_dict
+            # Opción 2: Dentro de key 'service_account'
+            elif 'service_account' in secrets_dict:
+                sa_info = dict(secrets_dict['service_account'])
+            
+            if sa_info:
+                # Asegurar que la private_key tenga los saltos de línea correctos
+                if "private_key" in sa_info:
+                    sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+                
+                scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+                _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
+                return _GS_CREDS
+        
+        # 2) Fallback para desarrollo local
         try:
-            if isinstance(SERVICE_ACCOUNT_JSON_STR, dict):
-                sa_info = SERVICE_ACCOUNT_JSON_STR
-            elif isinstance(SERVICE_ACCOUNT_JSON_STR, str) and SERVICE_ACCOUNT_JSON_STR.strip():
-                sa_info = json.loads(SERVICE_ACCOUNT_JSON_STR)
-        except Exception:
-            sa_info = None
-
-    # 4) Fallback a archivo service_account.json en disco
-    if sa_info is None:
-        with open("service_account.json", "r", encoding="utf-8") as f:
-            sa_info = json.load(f)
-    #  --- FIX para Streamlit: normaliza los saltos de línea en la private_key ---
-    if isinstance(sa_info, dict) and "private_key" in sa_info and isinstance(sa_info["private_key"], str):
-        sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
-    #  
-
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
-    return _GS_CREDS
+            with open("service_account.json", "r", encoding="utf-8") as f:
+                import json
+                sa_info = json.load(f)
+                if "private_key" in sa_info:
+                    sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+                scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+                _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
+                return _GS_CREDS
+        except FileNotFoundError:
+            pass
+            
+        st.error("❌ No se pudieron cargar las credenciales de Google Sheets")
+        return None
+        
+    except Exception as e:
+        st.error(f"❌ Error en autenticación Google Sheets: {str(e)}")
+        return None
 
 def _gs_open_worksheet(tab_name: str):
-    """Abre una pestaña; si no existe, la crea. Usa cache a nivel de módulo para evitar re-autenticación."""
+    """Abre una pestaña con mejor manejo de errores"""
     global _GS_GC, _GS_SH, _GS_WS_CACHE
     try:
         if tab_name in _GS_WS_CACHE:
             return _GS_WS_CACHE[tab_name]
 
         creds = _gs_credentials()
+        if creds is None:
+            st.error("No hay credenciales disponibles para Google Sheets")
+            return None
+
         if _GS_GC is None:
             _GS_GC = gspread.authorize(creds)
+        
         if _GS_SH is None:
-            _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
+            try:
+                _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
+                st.success("✅ Conexión a Google Sheets establecida")
+            except Exception as e:
+                st.error(f"❌ Error abriendo Google Sheet: {str(e)}")
+                st.info(f"Sheet ID: {GSHEET_ID}")
+                st.info("Verifica: 1) El Sheet ID es correcto, 2) La Sheet está compartida con el service account")
+                return None
 
         try:
             ws = _GS_SH.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
             ws = _GS_SH.add_worksheet(title=tab_name, rows="5000", cols="50")
+            st.info(f"✅ Nueva pestaña creada: {tab_name}")
 
         _GS_WS_CACHE[tab_name] = ws
         return ws
-    except Exception:
-        # si algo falla, no romper la app: propagar la excepción hacia el llamador para fallback
-        raise
+        
+    except Exception as e:
+        st.error(f"❌ Error abriendo pestaña {tab_name}: {str(e)}")
+        return None
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
@@ -861,10 +870,8 @@ COLUMNS = [
 
 def cargar_clientes() -> pd.DataFrame:
     """
-    Lee primero clientes.xlsx si existe; si no, clientes.csv; en último caso, DataFrame vacío.
-    Todas las columnas como texto, sin NaN.
+    Lee primero de Google Sheets (prioridad), luego de archivos locales
     """
-    # GSheets-backed loader (intenta si USE_GSHEETS)
     def _ensure_cols(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy().fillna("")
         for c in COLUMNS:
@@ -872,18 +879,29 @@ def cargar_clientes() -> pd.DataFrame:
                 df[c] = ""
         return df[[c for c in COLUMNS if c in df.columns]]
 
-    def cargar_clientes_gsheet() -> pd.DataFrame:
-        ws = _gs_open_worksheet(GSHEET_TAB)
-        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
-        if df is None or df.empty:
-            df = pd.DataFrame(columns=COLUMNS)
-        df = df.fillna("")
-        for c in COLUMNS:
-            if c not in df.columns:
-                df[c] = ""
-        return df[COLUMNS].astype(str).fillna("")
+    # 1) PRIMERO intentar Google Sheets (si está habilitado)
+    if USE_GSHEETS:
+        try:
+            ws = _gs_open_worksheet(GSHEET_TAB)
+            if ws is None:
+                st.warning("No se pudo conectar a Google Sheets, usando datos locales")
+                raise Exception("No connection")
+                
+            df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
+            if df is None or df.empty:
+                df = pd.DataFrame(columns=COLUMNS)
+            else:
+                st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                
+            df = df.fillna("")
+            for c in COLUMNS:
+                if c not in df.columns:
+                    df[c] = ""
+            return df[COLUMNS].astype(str).fillna("")
+        except Exception as e:
+            st.warning(f"⚠️ No se pudo cargar desde Google Sheets: {str(e)}")
 
-    # 1) Intentar carga local primero (más rápida, sin red)
+    # 2) Fallback a archivos locales
     try:
         if CLIENTES_XLSX.exists():
             df = pd.read_excel(CLIENTES_XLSX, dtype=str).fillna("")
@@ -897,13 +915,6 @@ def cargar_clientes() -> pd.DataFrame:
             return _ensure_cols(df)
     except Exception:
         pass
-
-    # 2) Si no hay local, intentar Google Sheets (fallback)
-    if USE_GSHEETS:
-        try:
-            return cargar_clientes_gsheet()
-        except Exception:
-            pass
 
     return pd.DataFrame(columns=COLUMNS)
 
