@@ -35,6 +35,10 @@ from google.auth.transport.requests import Request
 
 # Debug info removed by user request (sidebar debug block intentionally deleted)
 
+# imports adicionales para backup automático
+import subprocess
+import time
+
 # Paths and data dirs
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -42,6 +46,12 @@ DOCS_DIR = DATA_DIR / "docs"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CLIENTES_CSV = DATA_DIR / "clientes.csv"
 CLIENTES_XLSX = DATA_DIR / "clientes.xlsx"
+
+# Inicialización de session_state para backup automático
+if 'git_auto_setup_done' not in st.session_state:
+    st.session_state.git_auto_setup_done = False
+if 'last_auto_backup' not in st.session_state:
+    st.session_state.last_auto_backup = 0
 
 # === CONFIGURACIÓN GOOGLE SHEETS ===
 USE_GSHEETS = True   # pon False si quieres trabajar sólo local
@@ -1515,6 +1525,35 @@ def guardar_clientes(df: pd.DataFrame):
                 except Exception:
                     pass
 
+        # === NUEVO: BACKUP AUTOMÁTICO A GIT ===
+        try:
+            # Configurar git si es la primera vez
+            if not st.session_state.get('git_auto_setup_done'):
+                if setup_git_auto():
+                    st.session_state['git_auto_setup_done'] = True
+            
+            # Backup automático cada 2 horas máximo (evita spam)
+            last_auto_backup = st.session_state.get('last_auto_backup', 0)
+            now_ts = time.time()
+            
+            if now_ts - last_auto_backup > 2 * 60 * 60:  # 2 horas
+                backup_result = git_auto_commit()
+                st.session_state['last_auto_backup'] = now_ts
+                
+                # Log silencioso pero informativo
+                if "✅" in backup_result:
+                    try:
+                        st.toast("📦 Backup automático a git completado", icon="✅")
+                    except Exception:
+                        pass
+                elif "❌" in backup_result:
+                    print(f"Error backup git: {backup_result}")
+                # Si es "⏭️ Sin cambios" no hacemos nada
+                
+        except Exception as e:
+            print(f"Error en backup automático: {e}")  # No romper el flujo principal
+        # === FIN NUEVO ===
+
     except Exception as e:
         try:
             st.error(f"Error guardando clientes: {e}")
@@ -1681,6 +1720,80 @@ def initialize_shared_drive():
 
 # Inicialización solicitada por el usuario
 initialize_shared_drive()
+
+
+# === GIT BACKUP HELPERS ===
+def git_auto_commit():
+    """Hace commit y push automático de los datos del CRM"""
+    try:
+        # Configurar git si no está configurado
+        repo_path = Path(__file__).parent
+        
+        # Agregar archivos de datos
+        result_add = subprocess.run([
+            'git', 'add', 'data/clientes.csv', 'data/clientes.xlsx', 'data/docs/'
+        ], cwd=repo_path, capture_output=True, text=True, timeout=30)
+        
+        if result_add.returncode != 0:
+            return f"❌ Error agregando archivos: {result_add.stderr}"
+        
+        # Commit con timestamp
+        commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        result_commit = subprocess.run([
+            'git', 'commit', '-m', commit_message
+        ], cwd=repo_path, capture_output=True, text=True, timeout=30)
+        
+        # Si no hay cambios, no hacer push
+        if "nothing to commit" in result_commit.stdout or "nada para hacer commit" in result_commit.stdout:
+            return "⏭️ Sin cambios para commit"
+        
+        if result_commit.returncode != 0:
+            return f"❌ Error en commit: {result_commit.stderr}"
+        
+        # Push a repositorio remoto
+        result_push = subprocess.run([
+            'git', 'push'
+        ], cwd=repo_path, capture_output=True, text=True, timeout=60)
+        
+        if result_push.returncode == 0:
+            return f"✅ Backup automático: {commit_message}"
+        else:
+            return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
+            
+    except subprocess.TimeoutExpired:
+        return "❌ Timeout en operación git"
+    except Exception as e:
+        return f"❌ Error general: {str(e)}"
+
+
+def setup_git_auto():
+    """Configura git para commits automáticos (ejecutar una vez)"""
+    try:
+        repo_path = Path(__file__).parent
+        
+        # Solo configurar si no existe
+        result_email = subprocess.run([
+            'git', 'config', 'user.email'
+        ], cwd=repo_path, capture_output=True, text=True)
+        
+        if result_email.returncode != 0 or not result_email.stdout.strip():
+            subprocess.run([
+                'git', 'config', 'user.email', 'crm-auto-backup@kapitaliza.com'
+            ], cwd=repo_path, check=True)
+            
+        result_name = subprocess.run([
+            'git', 'config', 'user.name'
+        ], cwd=repo_path, capture_output=True, text=True)
+        
+        if result_name.returncode != 0 or not result_name.stdout.strip():
+            subprocess.run([
+                'git', 'config', 'user.name', 'CRM Auto Backup'
+            ], cwd=repo_path, check=True)
+            
+        return True
+    except Exception as e:
+        print(f"⚠️ Configuración git automática falló: {e}")
+        return False
 
 # Inicializar verificación de Drive (establece st.session_state.drive_accessible)
 def verify_drive_access() -> bool:
@@ -2563,6 +2676,30 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Resumen filtrado")
 st.sidebar.metric("Clientes visibles", len(df_ver))
 st.sidebar.metric("Total en base", len(df_cli))
+
+# Backup automático (manual)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔄 Backup Automático")
+
+# Estado del backup
+last_backup = st.session_state.get('last_auto_backup', 0)
+if last_backup:
+    last_time = datetime.fromtimestamp(last_backup)
+    st.sidebar.caption(f"Último backup: {last_time.strftime('%H:%M')}")
+else:
+    st.sidebar.caption("Backup: Nunca")
+
+# Botón manual para forzar backup
+if st.sidebar.button("💾 Backup Manual Ahora"):
+    with st.sidebar:
+        with st.spinner("Haciendo backup..."):
+            result = git_auto_commit()
+            if "✅" in result:
+                st.success("Backup exitoso")
+            elif "⏭️" in result:
+                st.info("Sin cambios para backup")
+            else:
+                st.error(f"Error: {result}")
 
 # Añadir botón para descargar Excel del resumen filtrado (df_ver)
 try:
