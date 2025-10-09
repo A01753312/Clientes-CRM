@@ -20,24 +20,12 @@ import pandas as pd
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from google.oauth2.service_account import Credentials
-# Google Drive API helpers (optional, used if USE_GSHEETS and Drive access enabled)
-try:
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
-except Exception:
-    build = None
-    MediaFileUpload = None
-    MediaIoBaseUpload = None
 import streamlit as st
 import shutil
 import altair as alt
 from google.auth.transport.requests import Request
 
 # Debug info removed by user request (sidebar debug block intentionally deleted)
-
-# imports adicionales para backup automático
-import subprocess
-import time
 
 # Paths and data dirs
 DATA_DIR = Path("data")
@@ -47,28 +35,11 @@ DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CLIENTES_CSV = DATA_DIR / "clientes.csv"
 CLIENTES_XLSX = DATA_DIR / "clientes.xlsx"
 
-# Inicialización de session_state para backup automático
-if 'git_auto_setup_done' not in st.session_state:
-    st.session_state.git_auto_setup_done = False
-if 'last_auto_backup' not in st.session_state:
-    st.session_state.last_auto_backup = 0
-
 # === CONFIGURACIÓN GOOGLE SHEETS ===
 USE_GSHEETS = True   # pon False si quieres trabajar sólo local
 GSHEET_ID      = "10_xueUKm0O1QwOK1YtZI-dFZlNdKVv82M2z29PfM9qk"
 GSHEET_TAB     = "clientes"    # tu pestaña principal
 GSHEET_HISTTAB = "historial"   # tu pestaña de historial
-# === CONFIGURACIÓN GOOGLE DRIVE (root opcional) ===
-# Si quieres forzar que todas las carpetas de cliente se creen dentro de
-# una carpeta raíz específica en Drive, pega aquí su ID. Si está vacío,
-# se crearán en el nivel raíz del service account.
-DRIVE_ROOT_FOLDER_ID = "1SrYM47mBRzOwr59dbCdsEXJyzf9Pbd_V"
-# === CONFIGURACIÓN GOOGLE SHARED DRIVE ===
-DRIVE_SHARED_DRIVE_ID = "0ADtqpPH_M13HUk9PVA"  # ID de tu Shared Drive
-USE_SHARED_DRIVE = True
-# === CONFIGURACIÓN GOOGLE DRIVE PERSONAL ===
-DRIVE_FOLDER_ID = "1bZchcEjASK3nnrpp4UITvI6cCXwrlabv"  # Tu NUEVA carpeta personal
-USE_DRIVE_STORAGE = True
 
 
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
@@ -105,16 +76,9 @@ def _gs_credentials():
                 if "private_key" in sa_info:
                     sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
                 
-                scopes = [
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"  # NUEVO scope para Drive
-                ]
-                try:
-                    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
-                    return _GS_CREDS
-                except Exception as e:
-                    st.error(f"❌ Error creando credenciales: {e}")
-                    return None
+                scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+                _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
+                return _GS_CREDS
         
         # 2) Fallback para desarrollo local
         try:
@@ -123,16 +87,9 @@ def _gs_credentials():
                 sa_info = json.load(f)
                 if "private_key" in sa_info:
                     sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
-                scopes = [
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"  # NUEVO scope para Drive
-                ]
-                try:
-                    _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
-                    return _GS_CREDS
-                except Exception as e:
-                    st.error(f"❌ Error creando credenciales: {e}")
-                    return None
+                scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+                _GS_CREDS = Credentials.from_service_account_info(sa_info, scopes=scopes)
+                return _GS_CREDS
         except FileNotFoundError:
             pass
             
@@ -176,371 +133,6 @@ def _gs_open_worksheet(tab_name: str):
         
     except Exception:
         return None
-
-# ----------------- Google Drive helpers -----------------
-_DRIVE_SERVICE = None
-
-def get_drive_service():
-    """Obtiene el servicio de Google Drive"""
-    global _DRIVE_SERVICE
-    if _DRIVE_SERVICE is not None:
-        return _DRIVE_SERVICE
-
-    creds = _gs_credentials()
-    if creds is None or build is None:
-        return None
-
-    try:
-        _DRIVE_SERVICE = build('drive', 'v3', credentials=creds)
-        return _DRIVE_SERVICE
-    except Exception as e:
-        st.error(f"❌ Error creando servicio Drive: {e}")
-        return None
-
-
-def create_shared_drive_folder(folder_name, parent_id=None):
-    """Crea una carpeta en Google Shared Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-
-    try:
-        file_metadata = {
-            'name': folder_name,
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
-        if parent_id:
-            file_metadata['parents'] = [parent_id]
-        
-        folder = service.files().create(
-            body=file_metadata,
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
-        
-        return folder.get('id')
-    except Exception as e:
-        st.error(f"❌ Error creando carpeta en Shared Drive: {e}")
-        return None
-
-
-def find_or_create_client_shared_folder(client_id, client_name):
-    """Encuentra o crea la carpeta del cliente en Shared Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-    
-    try:
-        folder_name = f"{client_id}_{safe_name(client_name)}"
-        
-        # Buscar carpeta existente en Shared Drive
-        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        
-        results = service.files().list(
-            q=query,
-            fields="files(id, name)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-            corpora='drive',
-            driveId=DRIVE_SHARED_DRIVE_ID
-        ).execute()
-        
-        folders = results.get('files', [])
-        
-        if folders:
-            return folders[0]['id']
-        else:
-            # Crear nueva carpeta en la raíz del Shared Drive
-            return create_shared_drive_folder(folder_name, DRIVE_SHARED_DRIVE_ID)
-            
-    except Exception as e:
-        st.error(f"❌ Error buscando/creando carpeta cliente en Shared Drive: {e}")
-        return None
-
-
-def upload_to_shared_drive(file_data, file_name, folder_id):
-    """Sube un archivo a Google Shared Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-    
-    try:
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
-        }
-        
-        # Convertir a bytes si es necesario
-        if hasattr(file_data, 'getvalue'):
-            file_bytes = file_data.getvalue()
-        elif isinstance(file_data, bytes):
-            file_bytes = file_data
-        else:
-            file_bytes = file_data
-        
-        media = MediaIoBaseUpload(
-            io.BytesIO(file_bytes), 
-            mimetype='application/octet-stream',
-            resumable=True
-        )
-        
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id,webViewLink,name,createdTime',
-            supportsAllDrives=True
-        ).execute()
-        
-        return file
-    except Exception as e:
-        st.error(f"❌ Error subiendo archivo a Shared Drive: {e}")
-        return None
-
-
-def upload_to_personal_drive(file_data, file_name, folder_id=DRIVE_FOLDER_ID):
-    """Sube archivos a tu carpeta personal de Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-    
-    try:
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]  # Tu carpeta personal
-        }
-        
-        # Convertir a bytes
-        if hasattr(file_data, 'getvalue'):
-            file_bytes = file_data.getvalue()
-        elif isinstance(file_data, bytes):
-            file_bytes = file_data
-        else:
-            file_bytes = file_data
-        
-        media = MediaIoBaseUpload(
-            io.BytesIO(file_bytes), 
-            mimetype='application/octet-stream',
-            resumable=True
-        )
-        
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id,webViewLink,name,createdTime,size'
-        ).execute()
-        
-        try:
-            st.success(f"✅ {file_name} subido a Google Drive")
-        except Exception:
-            pass
-        return file
-        
-    except Exception as e:
-        st.error(f"❌ Error subiendo a Drive personal: {e}")
-        return None
-
-
-def find_or_create_client_personal_folder(client_id, client_name):
-    """Crea carpeta del cliente dentro de tu carpeta personal"""
-    service = get_drive_service()
-    if service is None:
-        return None
-    
-    try:
-        folder_name = f"{client_id}_{safe_name(client_name)}"
-        
-        # Buscar si ya existe la carpeta del cliente
-        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{DRIVE_FOLDER_ID}' in parents and trashed=false"
-        
-        results = service.files().list(
-            q=query,
-            fields="files(id, name)"
-        ).execute()
-        
-        folders = results.get('files', [])
-        
-        if folders:
-            return folders[0]['id']
-        else:
-            # Crear nueva carpeta para el cliente
-            file_metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder',
-                'parents': [DRIVE_FOLDER_ID]
-            }
-            
-            folder = service.files().create(
-                body=file_metadata,
-                fields='id'
-            ).execute()
-            
-            return folder.get('id')
-            
-    except Exception as e:
-        st.error(f"❌ Error con carpeta personal: {e}")
-        return None
-
-
-def verify_personal_drive_access():
-    """Verifica acceso a tu carpeta personal"""
-    service = get_drive_service()
-    if service is None:
-        return False
-    
-    try:
-        # Intentar acceder a la carpeta
-        folder = service.files().get(
-            fileId=DRIVE_FOLDER_ID, 
-            fields='id, name'
-        ).execute()
-        
-        try:
-            st.success(f"✅ Conectado a Google Drive: {folder.get('name', 'Carpeta CRM')}")
-        except Exception:
-            pass
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ Error accediendo a carpeta personal: {e}")
-        return False
-
-
-def list_shared_drive_files(folder_id):
-    """Lista archivos de una carpeta en Shared Drive"""
-    service = get_drive_service()
-    if service is None:
-        return []
-    
-    try:
-        query = f"'{folder_id}' in parents and trashed=false"
-        
-        results = service.files().list(
-            q=query,
-            fields="files(id, name, webViewLink, createdTime, mimeType, size)",
-            orderBy="createdTime desc",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
-        ).execute()
-        
-        return results.get('files', [])
-    except Exception as e:
-        st.error(f"❌ Error listando archivos de Shared Drive: {e}")
-        return []
-
-
-def create_drive_folder(folder_name, parent_id=None):
-    """Crea una carpeta en Google Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-
-    try:
-        file_metadata = {
-            'name': folder_name,
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
-        if parent_id:
-            file_metadata['parents'] = [parent_id]
-        
-        folder = service.files().create(body=file_metadata, fields='id').execute()
-        return folder.get('id')
-    except Exception as e:
-        st.error(f"❌ Error creando carpeta en Drive: {e}")
-        return None
-
-
-def find_or_create_client_folder(client_id, client_name):
-    """Encuentra o crea la carpeta del cliente en Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-
-    try:
-        # Buscar carpeta existente por nombre formado
-        folder_name = f"{client_id}_{safe_name(client_name)}"
-        # Si se configuró DRIVE_ROOT_FOLDER_ID, buscar dentro de esa carpeta
-        if DRIVE_ROOT_FOLDER_ID:
-            query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{DRIVE_ROOT_FOLDER_ID}' in parents and trashed=false"
-        else:
-            query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-
-        results = service.files().list(q=query, fields="files(id, name)").execute()
-        folders = results.get('files', [])
-
-        if folders:
-            return folders[0]['id']
-        else:
-            # Crear nueva carpeta preferentemente bajo la carpeta raíz si está configurada
-            if DRIVE_ROOT_FOLDER_ID:
-                return create_drive_folder(folder_name, parent_id=DRIVE_ROOT_FOLDER_ID)
-            return create_drive_folder(folder_name)
-            
-    except Exception as e:
-        st.error(f"❌ Error buscando/creando carpeta cliente: {e}")
-        return None
-
-
-def upload_to_drive(file_data, file_name, folder_id, mime_type='application/octet-stream'):
-    """Sube un archivo a Google Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-
-    try:
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
-        }
-        
-        # Convertir a bytes si es necesario
-        if hasattr(file_data, 'getvalue'):
-            file_bytes = file_data.getvalue()
-        elif isinstance(file_data, bytes):
-            file_bytes = file_data
-        else:
-            file_bytes = file_data
-        
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), 
-                                mimetype=mime_type,
-                                resumable=True)
-        
-        file = service.files().create(body=file_metadata,
-                                    media_body=media,
-                                    fields='id,webViewLink').execute()
-        
-        return file
-    except Exception as e:
-        st.error(f"❌ Error subiendo archivo a Drive: {e}")
-        return None
-
-
-def get_drive_file_url(file_id):
-    """Obtiene la URL de descarga de un archivo en Drive"""
-    service = get_drive_service()
-    if service is None:
-        return None
-
-    try:
-        file = service.files().get(fileId=file_id, fields='webViewLink,webContentLink').execute()
-        return file.get('webViewLink')
-    except Exception as e:
-        st.error(f"❌ Error obteniendo URL del archivo: {e}")
-        return None
-
-
-def delete_drive_file(file_id):
-    """Elimina un archivo de Google Drive"""
-    service = get_drive_service()
-    if service is None:
-        return False
-    try:
-        service.files().delete(fileId=file_id).execute()
-        return True
-    except Exception as e:
-        st.error(f"❌ Error eliminando archivo: {e}")
-        return False
-
-# -------------------------------------------------------
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
@@ -783,159 +375,113 @@ def canonicalize_from_catalog(
 
 
 def subir_docs(cid: str, files, prefijo: str = "") -> list:
-    """Wrapper: intenta subir a Drive si está disponible, sino guarda localmente.
-    Retorna lista de metadatos con al menos 'name' y 'storage' ('drive'|'local').
+    """
+    Guarda una lista de archivos subidos por Streamlit en la carpeta del cliente.
+    `files` puede ser una lista de UploadedFile o similar; cada objeto debe exponer `.name` y `.read()` / `.getbuffer()`.
+    `prefijo` se antepone al nombre del archivo en disco.
+    NO escribe en historial; retorna la lista de nombres guardados.
     """
     if not cid:
         return []
-
-    # Inicializar flag si es necesario
-    if st.session_state.get('drive_accessible') is None:
-        initialize_drive()
-
-    if st.session_state.get('drive_accessible'):
-        return subir_docs_a_drive(cid, files, prefijo=prefijo)
-    else:
-        return subir_docs_local(cid, files, prefijo=prefijo)
-
-
-def subir_docs_a_drive(cid: str, files, prefijo: str = "") -> list:
-    """Sube archivos a Drive. Devuelve metadatos con 'storage': 'drive'"""
-    if not cid:
+    folder = carpeta_docs_cliente(cid)
+    # Asegurar que `files` sea iterable (Streamlit acepta single file o lista)
+    if files is None:
         return []
-
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    folder_id = find_or_create_client_folder(cid, nombre_cliente)
-    if not folder_id:
-        return []
-
-    saved_files = []
     files_iter = files if hasattr(files, '__iter__') and not isinstance(files, (bytes, bytearray)) else [files]
 
+    # Primero: leer todo el contenido en memoria de forma segura
+    to_write = []  # list of tuples (target_name, bytes)
     for f in files_iter:
         try:
             fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
             target_name = safe_name(f"{prefijo}{fname}")
-
+            data = None
             if hasattr(f, "getbuffer"):
-                data = f.getbuffer()
-            elif hasattr(f, "read"):
-                data = f.read()
-            else:
+                try:
+                    data = f.getbuffer()
+                except Exception:
+                    data = None
+            if data is None and hasattr(f, "read"):
+                try:
+                    data = f.read()
+                except Exception:
+                    data = None
+            if data is None:
                 continue
-
-            drive_file = upload_to_drive(data, target_name, folder_id)
-            if drive_file:
-                saved_files.append({
-                    'name': target_name,
-                    'drive_id': drive_file.get('id'),
-                    'url': drive_file.get('webViewLink'),
-                    'storage': 'drive'
-                })
+            if isinstance(data, memoryview):
+                data = data.tobytes()
+            # ensure bytes
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            if not isinstance(data, (bytes, bytearray)):
+                try:
+                    data = bytes(data)
+                except Exception:
+                    continue
+            to_write.append((target_name, data))
         except Exception:
             continue
 
+    # Escribir en paralelo para acelerar (especialmente cuando hay varios archivos)
+    saved_files = []
+    try:
+        import concurrent.futures
+        max_workers = min(4, (len(to_write) or 1))
+        def _write_item(item):
+            tname, b = item
+            try:
+                out_path = folder / tname
+                out_path.write_bytes(b)
+                return tname
+            except Exception:
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [ex.submit(_write_item, it) for it in to_write]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    res = fut.result()
+                    if res:
+                        saved_files.append(res)
+                except Exception:
+                    continue
+    except Exception:
+        # fallback a escritura secuencial si algo falla
+        for tname, b in to_write:
+            try:
+                out_path = folder / tname
+                out_path.write_bytes(b)
+                saved_files.append(tname)
+            except Exception:
+                continue
+    # devolver la lista de archivos guardados para que el llamador registre 1 entrada por lote
     return saved_files
 
 
-def subir_docs_local(cid: str, files, prefijo: str = "") -> list:
-    """Guarda archivos localmente bajo data/docs/<safe_name> o <cid> como fallback.
-    Devuelve metadatos con 'storage': 'local'.
-    """
-    if not cid:
-        return []
-
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    folder_name = safe_name(nombre_cliente) or cid
-    target_dir = DOCS_DIR / folder_name
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    saved = []
-    files_iter = files if hasattr(files, '__iter__') and not isinstance(files, (bytes, bytearray)) else [files]
-    for f in files_iter:
-        try:
-            fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
-            target_name = safe_name(f"{prefijo}{fname}")
-            out_path = target_dir / target_name
-            # Escribir al disco
-            if hasattr(f, "getbuffer"):
-                data = f.getbuffer()
-                with open(out_path, "wb") as of:
-                    of.write(data)
-            elif hasattr(f, "read"):
-                data = f.read()
-                # si es texto
-                mode = "wb" if isinstance(data, (bytes, bytearray)) else "w"
-                with open(out_path, mode) as of:
-                    of.write(data)
-            else:
-                continue
-
-            saved.append({'name': target_name, 'path': str(out_path), 'storage': 'local'})
-        except Exception:
-            continue
-
-    return saved
-
-
 def listar_docs_cliente(cid: str):
-    """Wrapper: lista archivos de Drive si está disponible, sino desde local."""
-    if st.session_state.get('drive_accessible') is None:
-        initialize_drive()
-
-    if st.session_state.get('drive_accessible'):
-        return listar_docs_drive(cid)
-    return listar_docs_local(cid)
-
-
-def listar_docs_drive(cid: str):
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    folder_id = find_or_create_client_folder(cid, nombre_cliente)
-    if not folder_id:
-        return []
-
-    service = get_drive_service()
-    if service is None:
-        return []
-
+    """
+    Lista los archivos asociados a un cliente (Path objects), ordenados por nombre.
+    Retorna lista vacía si no existe carpeta.
+    """
     try:
-        query = f"'{folder_id}' in parents and trashed=false"
-        results = service.files().list(q=query, fields="files(id, name, webViewLink, createdTime)").execute()
-        files = results.get('files', [])
-        # marcar storage
-        for f in files:
-            f['storage'] = 'drive'
-        return sorted(files, key=lambda x: x.get('name', ''))
+        nombre = get_nombre_by_id(cid) or ""
     except Exception:
-        return []
+        nombre = ""
 
+    name_safe = safe_name(nombre) if nombre else ""
+    id_safe = safe_name(str(cid))
 
-def listar_docs_local(cid: str):
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    folder_name = safe_name(nombre_cliente) or cid
-    target_dir = DOCS_DIR / folder_name
-    if not target_dir.exists():
-        return []
-    files = []
-    for p in sorted(target_dir.iterdir(), key=lambda x: x.name):
-        if p.is_file():
-            files.append({'id': None, 'name': p.name, 'path': str(p), 'createdTime': datetime.fromtimestamp(p.stat().st_mtime).isoformat(), 'storage': 'local'})
-    return files
+    # Preferir la carpeta por nombre si existe; si no, revisar la carpeta por id.
+    if name_safe:
+        folder = DOCS_DIR / name_safe
+        if folder.exists() and folder.is_dir():
+            return sorted([p for p in folder.iterdir() if p.is_file()], key=lambda p: p.name)
 
+    folder_id = DOCS_DIR / id_safe
+    if folder_id.exists() and folder_id.is_dir():
+        return sorted([p for p in folder_id.iterdir() if p.is_file()], key=lambda p: p.name)
 
-def eliminar_documento(file_meta: dict) -> bool:
-    """Elimina un documento tanto en Drive como local según file_meta['storage']."""
-    try:
-        if file_meta.get('storage') == 'drive' and file_meta.get('id'):
-            return delete_drive_file(file_meta.get('id'))
-        # else borrar local
-        path = file_meta.get('path')
-        if path and os.path.exists(path):
-            os.remove(path)
-            return True
-        return False
-    except Exception:
-        return False
+    return []
 
 
 def nuevo_id_cliente(df: pd.DataFrame) -> str:
@@ -1525,35 +1071,6 @@ def guardar_clientes(df: pd.DataFrame):
                 except Exception:
                     pass
 
-        # === NUEVO: BACKUP AUTOMÁTICO A GIT ===
-        try:
-            # Configurar git si es la primera vez
-            if not st.session_state.get('git_auto_setup_done'):
-                if setup_git_auto():
-                    st.session_state['git_auto_setup_done'] = True
-            
-            # Backup automático cada 2 horas máximo (evita spam)
-            last_auto_backup = st.session_state.get('last_auto_backup', 0)
-            now_ts = time.time()
-            
-            if now_ts - last_auto_backup > 2 * 60 * 60:  # 2 horas
-                backup_result = git_auto_commit()
-                st.session_state['last_auto_backup'] = now_ts
-                
-                # Log silencioso pero informativo
-                if "✅" in backup_result:
-                    try:
-                        st.toast("📦 Backup automático a git completado", icon="✅")
-                    except Exception:
-                        pass
-                elif "❌" in backup_result:
-                    print(f"Error backup git: {backup_result}")
-                # Si es "⏭️ Sin cambios" no hacemos nada
-                
-        except Exception as e:
-            print(f"Error en backup automático: {e}")  # No romper el flujo principal
-        # === FIN NUEVO ===
-
     except Exception as e:
         try:
             st.error(f"Error guardando clientes: {e}")
@@ -1561,278 +1078,6 @@ def guardar_clientes(df: pd.DataFrame):
             pass
 
 df_cli = cargar_clientes()
-
-
-def verify_shared_drive_access():
-    """Verifica que tenemos acceso al Shared Drive"""
-    service = get_drive_service()
-    if service is None:
-        return False
-    
-    try:
-        # Intentar obtener información del Shared Drive
-        drive_info = service.drives().get(driveId=DRIVE_SHARED_DRIVE_ID).execute()
-        st.success(f"✅ Acceso a Shared Drive confirmado: {drive_info.get('name', 'CRM Documentos')}")
-        return True
-    except Exception as e:
-        st.error(f"❌ Error accediendo al Shared Drive: {e}")
-        st.info("""
-        **Para solucionar esto:**
-        1. Ve a tu Shared Drive: https://drive.google.com/drive/u/1/folders/0ADtqpPH_M13HUk9PVA
-        2. Haz clic en "Compartir"
-        3. Agrega este email: `streamlit-crm@crmkapitaliza.iam.gserviceaccount.com`
-        4. Dale permisos de **Editor** o **Administrador de contenido**
-        """)
-        return False
-
-
-def subir_docs_drive(cid: str, files, prefijo: str = "") -> list:
-    """
-    Sube documentos a tu carpeta personal de Drive
-    """
-    if not cid:
-        return []
-    
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    
-    # Crear/obtener carpeta del cliente
-    folder_id = find_or_create_client_personal_folder(cid, nombre_cliente)
-    if not folder_id:
-        st.error("❌ No se pudo crear carpeta del cliente en Drive")
-        return []
-    
-    saved_files = []
-    files_iter = files if hasattr(files, '__iter__') and not isinstance(files, (bytes, bytearray)) else [files]
-    
-    for f in files_iter:
-        try:
-            fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
-            target_name = safe_name(f"{prefijo}{fname}")
-            
-            # Leer datos
-            if hasattr(f, "getbuffer"):
-                data = f.getbuffer()
-            elif hasattr(f, "read"):
-                data = f.read()
-            else:
-                continue
-            
-            # Subir a Drive
-            drive_file = upload_to_personal_drive(data, target_name, folder_id)
-            if drive_file:
-                saved_files.append({
-                    'name': drive_file.get('name'),
-                    'drive_id': drive_file.get('id'),
-                    'url': drive_file.get('webViewLink'),
-                    'created_time': drive_file.get('createdTime'),
-                    'size': drive_file.get('size', 0),
-                    'storage': 'drive_personal'
-                })
-                
-        except Exception as e:
-            st.error(f"❌ Error subiendo {fname}: {e}")
-            continue
-    
-    return saved_files
-
-
-def listar_docs_drive(cid: str):
-    """Lista documentos desde tu carpeta personal de Drive"""
-    nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
-    
-    folder_id = find_or_create_client_personal_folder(cid, nombre_cliente)
-    if not folder_id:
-        return []
-    
-    service = get_drive_service()
-    if service is None:
-        return []
-    
-    try:
-        query = f"'{folder_id}' in parents and trashed=false"
-        
-        results = service.files().list(
-            q=query,
-            fields="files(id, name, webViewLink, createdTime, mimeType, size)",
-            orderBy="createdTime desc"
-        ).execute()
-        
-        files = results.get('files', [])
-        
-        # Agregar info de storage
-        for file in files:
-            file['storage'] = 'drive_personal'
-        
-        return files
-        
-    except Exception as e:
-        st.error(f"❌ Error listando archivos: {e}")
-        return []
-
-
-def subir_docs_inteligente(cid: str, files, prefijo: str = "") -> list:
-    """
-    Sistema inteligente: intenta Drive, si falla usa local
-    """
-    # Verificar si Drive está configurado y accesible
-    if USE_DRIVE_STORAGE and DRIVE_FOLDER_ID:
-        try:
-            if verify_personal_drive_access():
-                resultado = subir_docs_drive(cid, files, prefijo)
-                if resultado:
-                    return resultado
-        except Exception:
-            pass
-    
-    # Fallback a almacenamiento local
-    try:
-        st.info("🔄 Usando almacenamiento local (Google Drive no disponible)")
-    except Exception:
-        pass
-    return subir_docs_local(cid, files, prefijo)
-
-
-def listar_docs_inteligente(cid: str):
-    """Lista documentos inteligentemente"""
-    if USE_DRIVE_STORAGE and DRIVE_FOLDER_ID:
-        try:
-            drive_files = listar_docs_drive(cid)
-            if drive_files:
-                return drive_files
-        except Exception:
-            pass
-    
-    # Fallback a local
-    return listar_docs_local(cid)
-
-
-def initialize_shared_drive():
-    """Inicializa y verifica el acceso al Shared Drive"""
-    if USE_GSHEETS and USE_SHARED_DRIVE and DRIVE_SHARED_DRIVE_ID:
-        if verify_shared_drive_access():
-            st.session_state.shared_drive_accessible = True
-            # Crear carpeta de estructura si no existe
-            create_shared_drive_folder("CRM_Clientes", DRIVE_SHARED_DRIVE_ID)
-        else:
-            st.session_state.shared_drive_accessible = False
-            st.warning("⚠️ No se pudo acceder al Shared Drive. Los documentos se guardarán localmente.")
-
-
-# Inicialización solicitada por el usuario
-initialize_shared_drive()
-
-
-# === GIT BACKUP HELPERS ===
-def git_auto_commit():
-    """Hace commit y push automático de los datos del CRM"""
-    try:
-        # Configurar git si no está configurado
-        repo_path = Path(__file__).parent
-        
-        # Agregar archivos de datos
-        result_add = subprocess.run([
-            'git', 'add', 'data/clientes.csv', 'data/clientes.xlsx', 'data/docs/'
-        ], cwd=repo_path, capture_output=True, text=True, timeout=30)
-        
-        if result_add.returncode != 0:
-            return f"❌ Error agregando archivos: {result_add.stderr}"
-        
-        # Commit con timestamp
-        commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        result_commit = subprocess.run([
-            'git', 'commit', '-m', commit_message
-        ], cwd=repo_path, capture_output=True, text=True, timeout=30)
-        
-        # Si no hay cambios, no hacer push
-        if "nothing to commit" in result_commit.stdout or "nada para hacer commit" in result_commit.stdout:
-            return "⏭️ Sin cambios para commit"
-        
-        if result_commit.returncode != 0:
-            return f"❌ Error en commit: {result_commit.stderr}"
-        
-        # Push a repositorio remoto
-        result_push = subprocess.run([
-            'git', 'push'
-        ], cwd=repo_path, capture_output=True, text=True, timeout=60)
-        
-        if result_push.returncode == 0:
-            return f"✅ Backup automático: {commit_message}"
-        else:
-            return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
-            
-    except subprocess.TimeoutExpired:
-        return "❌ Timeout en operación git"
-    except Exception as e:
-        return f"❌ Error general: {str(e)}"
-
-
-def setup_git_auto():
-    """Configura git para commits automáticos (ejecutar una vez)"""
-    try:
-        repo_path = Path(__file__).parent
-        
-        # Solo configurar si no existe
-        result_email = subprocess.run([
-            'git', 'config', 'user.email'
-        ], cwd=repo_path, capture_output=True, text=True)
-        
-        if result_email.returncode != 0 or not result_email.stdout.strip():
-            subprocess.run([
-                'git', 'config', 'user.email', 'crm-auto-backup@kapitaliza.com'
-            ], cwd=repo_path, check=True)
-            
-        result_name = subprocess.run([
-            'git', 'config', 'user.name'
-        ], cwd=repo_path, capture_output=True, text=True)
-        
-        if result_name.returncode != 0 or not result_name.stdout.strip():
-            subprocess.run([
-                'git', 'config', 'user.name', 'CRM Auto Backup'
-            ], cwd=repo_path, check=True)
-            
-        return True
-    except Exception as e:
-        print(f"⚠️ Configuración git automática falló: {e}")
-        return False
-
-# Inicializar verificación de Drive (establece st.session_state.drive_accessible)
-def verify_drive_access() -> bool:
-    """Verifica que el service account tiene acceso a la carpeta raíz configurada.
-    Establece `st.session_state.drive_accessible` y muestra un mensaje breve.
-    """
-    try:
-        svc = get_drive_service()
-        if svc is None:
-            st.session_state['drive_accessible'] = False
-            return False
-
-        if not DRIVE_ROOT_FOLDER_ID:
-            # No hay root definido: consideramos que Drive está accesible si el servicio se creó
-            st.session_state['drive_accessible'] = True
-            return True
-
-        # Intentar obtener la metadata de la carpeta raíz
-        svc.files().get(fileId=DRIVE_ROOT_FOLDER_ID, fields='id').execute()
-        st.session_state['drive_accessible'] = True
-        try:
-            st.success("✅ Drive: acceso a carpeta raíz verificado")
-        except Exception:
-            pass
-        return True
-    except Exception as e:
-        st.session_state['drive_accessible'] = False
-        try:
-            st.error(f"❌ Drive inaccesible: {e}")
-        except Exception:
-            pass
-        return False
-
-
-def initialize_drive():
-    """Helper para inicializar el flag de acceso a Drive una sola vez por sesión."""
-    if st.session_state.get('drive_accessible') is None:
-        verify_drive_access()
-
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
 def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
@@ -2677,30 +1922,6 @@ st.sidebar.subheader("📊 Resumen filtrado")
 st.sidebar.metric("Clientes visibles", len(df_ver))
 st.sidebar.metric("Total en base", len(df_cli))
 
-# Backup automático (manual)
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔄 Backup Automático")
-
-# Estado del backup
-last_backup = st.session_state.get('last_auto_backup', 0)
-if last_backup:
-    last_time = datetime.fromtimestamp(last_backup)
-    st.sidebar.caption(f"Último backup: {last_time.strftime('%H:%M')}")
-else:
-    st.sidebar.caption("Backup: Nunca")
-
-# Botón manual para forzar backup
-if st.sidebar.button("💾 Backup Manual Ahora"):
-    with st.sidebar:
-        with st.spinner("Haciendo backup..."):
-            result = git_auto_commit()
-            if "✅" in result:
-                st.success("Backup exitoso")
-            elif "⏭️" in result:
-                st.info("Sin cambios para backup")
-            else:
-                st.error(f"Error: {result}")
-
 # Añadir botón para descargar Excel del resumen filtrado (df_ver)
 try:
     bio = io.BytesIO()
@@ -3511,7 +2732,7 @@ with tab_docs:
                     up_contrato_e = st.file_uploader("Contrato ", type=DOC_CATEGORIAS["contrato"], accept_multiple_files=True, key=f"contrato_{cid_sel}")
                 else:
                     up_contrato_e = None
-                submitted = st.form_submit_button("⬆️ Subir archivos a Google Drive")
+                submitted = st.form_submit_button("⬆️ Subir archivos")
                 if submitted:
                     subidos_lote = []
                     if up_estado_e:   subidos_lote += subir_docs(cid_sel, up_estado_e,   prefijo="estado_")
@@ -3524,6 +2745,7 @@ with tab_docs:
                         # Limpia uploaders
                         for k in (f"estado_{cid_sel}", f"buro_{cid_sel}", f"solic_{cid_sel}", f"otros_{cid_sel}", f"contrato_{cid_sel}"):
                             st.session_state.pop(k, None)
+
                         # 1 sola línea en historial
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         try:
@@ -3533,23 +2755,17 @@ with tab_docs:
                         except Exception:
                             nombre_x = est_x = seg_x = ""
 
-                        # subidos_lote es lista de dicts con 'name'
-                        try:
-                            names = [f.get('name') if isinstance(f, dict) else str(f) for f in subidos_lote]
-                        except Exception:
-                            names = [str(f) for f in subidos_lote]
-
                         append_historial(
                             str(cid_sel), nombre_x,
                             est_x, est_x, seg_x, seg_x,
-                            f"Subidos a Drive: {', '.join(names)}",
+                            f"Subidos: {', '.join(subidos_lote)}",
                             action="DOCUMENTOS", actor=actor
                         )
 
                         # refresco inmediato (token)
                         tok_key = f"docs_token_{cid_sel}"
                         st.session_state[tok_key] = st.session_state.get(tok_key, 0) + 1
-                        st.success(f"Archivo(s) subido(s) a Drive: {len(subidos_lote)} ✅")
+                        st.success(f"Archivo(s) subido(s): {len(subidos_lote)} ✅")
                     else:
                         st.info("No seleccionaste archivos para subir.")
 
@@ -3564,29 +2780,105 @@ with tab_docs:
             tok = st.session_state.get(tok_key, 0)
 
             files = listar_docs_cliente(cid_sel)
-            st.markdown("#### Archivos")
-            # Indicador de dónde se están almacenando los archivos actualmente
-            try:
-                storage_label = "Google Drive" if st.session_state.get('drive_accessible') else "Local"
-                st.info(f"📁 Almacenamiento: {storage_label}")
-            except Exception:
-                pass
             if files:
-                for file in files:
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col1:
-                        st.write(f"📄 **{file.get('name')}**")
-                        st.caption(f"Subido: {file.get('createdTime', 'N/A')}")
-                    with col2:
-                        if st.button("🔗 Abrir", key=f"open_{file.get('id')}"):
-                            st.markdown(f"[Abrir en Drive]({file.get('webViewLink')})", unsafe_allow_html=True)
-                    with col3:
-                        if st.button("🗑️", key=f"delete_{file.get('id')}"):
-                            if delete_drive_file(file.get('id')):
-                                st.success("Archivo eliminado")
-                                do_rerun()
+                st.markdown("#### Archivos del cliente")
+                # mapping explícito de prefijos usados al guardar
+                prefix_map = {
+                    "estado_cuenta": "estado_",
+                    "buro_credito": "buro_",
+                    "solicitud": "solic_",
+                    "contrato": "contrato_",
+                    "otros": "otros_",
+                }
+                for cat in DOC_CATEGORIAS.keys():
+                    pref = prefix_map.get(cat, cat.split('_')[0] + "_")
+                    cat_files = [f for f in files if f.name.startswith(pref)]
+                    if cat_files:
+                        st.write(f"• {cat.replace('_',' ').title()}:")
+                        for f in cat_files:
+                                    # Flow: user clicks a request button which prepares the bytes and
+                                    # registers the download in historial; then a download_button
+                                    # appears where the user can complete the download.
+                                    req_key = f"dl_req_{cid_sel}_{tok}_{f.name}"
+                                    blob_key = f"dl_blob_{cid_sel}_{f.name}"
+                                    btn_label = f"{f.name}"
+                                    #if st.button(btn_label, key=req_key):
+                                    try:
+                                        data_bytes = f.read_bytes()
+                                    except Exception:
+                                        data_bytes = b""
+
+                                    if st.download_button(
+                                        f"⬇️Descargar {f.name}",
+                                        data=data_bytes,
+                                        file_name=f.name,
+                                        key=f"dl_btn_{cid_sel}_{tok}_{f.name}"
+                                    ):
+                                            # Registrar en historial la descarga
+                                        try:
+                                            nombre_x = get_nombre_by_id(cid_sel)
+                                            est_x    = get_field_by_id(cid_sel, "estatus")
+                                            seg_x    = get_field_by_id(cid_sel, "segundo_estatus")
+                                        except Exception:
+                                            nombre_x = est_x = seg_x = ""
+                                        actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
+                                        append_historial(
+                                            str(cid_sel), nombre_x,
+                                            est_x, est_x, seg_x, seg_x,
+                                            f"Descargado: {f.name}",
+                                            action="DESCARGA DOCUMENTO",   # o el que uses en ACTION_LABELS
+                                            actor=actor
+                                        )
+
+
+                                    # --- Acciones adicionales: Eliminar / Reemplazar ---
+                                    a1, a2 = st.columns([1, 2])
+                                    with a1:
+                                        del_key = f"del_file_{cid_sel}_{f.name}"
+                                        if st.button("Eliminar", key=del_key):
+                                            try:
+                                                # borrar archivo físico
+                                                f.unlink()
+                                                # limpiar blobs relacionados
+                                                st.session_state.pop(blob_key, None)
+                                                # forzar refresh de botones
+                                                st.session_state[tok_key] = st.session_state.get(tok_key, 0) + 1
+                                                # historial
+                                                try:
+                                                    actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
+                                                    append_historial(str(cid_sel), get_nombre_by_id(cid_sel), "", "", "", "", f"Eliminado: {f.name}", action="DOCUMENTOS", actor=actor)
+                                                except Exception:
+                                                    pass
+                                                st.success(f"Archivo eliminado: {f.name}")
+                                            except Exception as e:
+                                                st.error(f"No se pudo eliminar {f.name}: {e}")
+
+                            
+                # Después de listar todas las categorías, ofrecer ZIP del cliente (una sola vez)
+                if st.button("📦 Descargar carpeta (ZIP)", key=f"zip_cliente_{cid_sel}"):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        for f in files:
+                            if f.is_file():
+                                zf.write(f, arcname=f.name)
+                    zip_buffer.seek(0)
+                    # registrar en historial la descarga del ZIP del cliente
+                    try:
+                        actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
+                        append_historial(str(cid_sel), get_nombre_by_id(cid_sel), "", "", "", "", f"ZIP cliente preparado ({len(files)} archivos)", action="DESCARGA ZIP CLIENTE", actor=actor)
+                    except Exception:
+                        pass
+                    st.session_state[f"_last_zip_{cid_sel}"] = zip_buffer.getvalue()
+                if st.session_state.get(f"_last_zip_{cid_sel}"):
+                    st.download_button(
+                        "⬇️ Descargar ZIP del cliente",
+                        data=st.session_state.get(f"_last_zip_{cid_sel}"),
+                        file_name=f"{safe_name(cid_sel)}_{safe_name(get_nombre_by_id(cid_sel))}.zip",
+                        mime="application/zip",
+                        key=f"dl_zip_cliente_{cid_sel}"
+                    )
             else:
-                st.info("No hay documentos para este cliente en Google Drive")
+                st.info("Este cliente no tiene documentos.")
 
             if can("delete_client"):
                 st.markdown("---")
