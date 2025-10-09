@@ -55,6 +55,8 @@ USE_GSHEETS = True   # pon False si quieres trabajar sólo local
 GSHEET_ID      = "10_xueUKm0O1QwOK1YtZI-dFZlNdKVv82M2z29PfM9qk"
 GSHEET_TAB     = "clientes"    # tu pestaña principal
 GSHEET_HISTTAB = "historial"   # tu pestaña de historial
+
+
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
 # Si la variable está vacía (""), se seguirá leyendo `service_account.json` desde disco.
 SERVICE_ACCOUNT_JSON_STR = ""
@@ -1328,6 +1330,8 @@ import secrets
 import base64
 
 USERS_FILE = DATA_DIR / "users.json"   # { "users":[{"user": "...", "role":"admin|member", "salt":"...", "hash":"..."}] }
+# Google Sheets tab name for users
+GSHEET_USERSTAB = "users"
 
 PERMISSIONS = {
     "admin":  {"manage_users": True,  "delete_client": True},
@@ -1369,16 +1373,124 @@ def _verify_pw(password: str, salt_hex: str, hash_hex: str) -> bool:
     _, hh = _hash_pw_pbkdf2(password, salt_hex)
     return secrets.compare_digest(hh, (hash_hex or ""))
 
+def cargar_usuarios_gsheet() -> dict:
+    """
+    Carga usuarios desde Google Sheets
+    Retorna el mismo formato que load_users()
+    """
+    if not USE_GSHEETS:
+        return {"users": []}
+    
+    try:
+        ws = _gs_open_worksheet(GSHEET_USERSTAB)
+        if ws is None:
+            return {"users": []}
+            
+        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
+        if df is None or df.empty:
+            return {"users": []}
+            
+        users = []
+        for _, row in df.iterrows():
+            user_data = {
+                "user": row.get("user", ""),
+                "role": row.get("role", "member"),
+                "salt": row.get("salt", ""),
+                "hash": row.get("hash", "")
+            }
+            # Solo agregar usuarios válidos
+            if user_data["user"] and user_data["salt"] and user_data["hash"]:
+                users.append(user_data)
+                
+        return {"users": users}
+        
+    except Exception as e:
+        st.error(f"Error cargando usuarios desde Google Sheets: {e}")
+        return {"users": []}
+
+def guardar_usuarios_gsheet(users_data: dict):
+    """
+    Guarda usuarios en Google Sheets
+    """
+    if not USE_GSHEETS:
+        return
+        
+    try:
+        ws = _gs_open_worksheet(GSHEET_USERSTAB)
+        if ws is None:
+            st.error("No se pudo abrir la pestaña de usuarios en Google Sheets")
+            return
+            
+        # Preparar datos para guardar
+        users_list = users_data.get("users", [])
+        if not users_list:
+            # Limpiar la hoja si no hay usuarios
+            try:
+                ws.clear()
+            except Exception:
+                pass
+            return
+            
+        # Crear DataFrame
+        df = pd.DataFrame(users_list)
+        
+        # Asegurar columnas en orden correcto
+        column_order = ["user", "role", "salt", "hash"]
+        for col in column_order:
+            if col not in df.columns:
+                df[col] = ""
+                
+        df = df[column_order]
+        
+        # Guardar en Google Sheets
+        set_with_dataframe(ws, df, include_index=False, include_column_header=True, resize=True)
+        
+    except Exception as e:
+        st.error(f"Error guardando usuarios en Google Sheets: {e}")
+
+def sync_usuarios_local_to_gsheet():
+    """
+    Sincroniza usuarios desde el archivo local a Google Sheets
+    Útil para migración inicial
+    """
+    try:
+        local_data = load_users()
+        guardar_usuarios_gsheet(local_data)
+    except Exception as e:
+        st.error(f"Error sincronizando usuarios: {e}")
+
 def load_users() -> dict:
+    """
+    Carga usuarios primero desde Google Sheets, luego desde archivo local como fallback
+    """
+    # 1) Intentar Google Sheets primero
+    if USE_GSHEETS:
+        gsheet_data = cargar_usuarios_gsheet()
+        if gsheet_data and gsheet_data.get("users"):
+            return gsheet_data
+    
+    # 2) Fallback a archivo local
     try:
         if USERS_FILE.exists():
             return json.loads(USERS_FILE.read_text(encoding="utf-8"))
     except Exception:
         pass
+    
     return {"users": []}
 
 def save_users(obj: dict):
-    USERS_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    """
+    Guarda usuarios en Google Sheets Y en archivo local (backup)
+    """
+    # 1) Guardar en Google Sheets (primario)
+    if USE_GSHEETS:
+        guardar_usuarios_gsheet(obj)
+    
+    # 2) Guardar en archivo local (backup)
+    try:
+        USERS_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        st.error(f"Error guardando usuarios localmente: {e}")
 
 def get_user(identifier: str) -> dict | None:
     """Buscar usuario por username o por email (compatibilidad backward).
@@ -1432,6 +1544,13 @@ def maybe_migrate_legacy_admin():
                 ok, _ = add_user(email, temp_pw, role="admin")
                 if ok:
                     st.sidebar.info(f"Admin migrado: {email}. Contraseña temporal: {temp_pw}. Inicia y cámbiala.")
+                    # Sincronizar con Google Sheets
+                    if USE_GSHEETS:
+                        try:
+                            local_data = load_users()
+                            guardar_usuarios_gsheet(local_data)
+                        except Exception:
+                            pass
                 legacy.unlink(missing_ok=True)
         except Exception:
             pass
@@ -1454,6 +1573,29 @@ def can(action: str) -> bool:
     role = (u or {}).get("role", "member")
     return PERMISSIONS.get(role, {}).get(action, False)
 
+# Migración inicial de usuarios locales a Google Sheets si procede
+def maybe_migrate_users_to_gsheet():
+    """
+    Migra usuarios del archivo local a Google Sheets si es la primera vez
+    """
+    if not USE_GSHEETS:
+        return
+        
+    try:
+        # Verificar si ya hay usuarios en Google Sheets
+        gsheet_data = cargar_usuarios_gsheet()
+        if not gsheet_data.get("users"):
+            # No hay usuarios en GS, migrar desde local
+            local_data = load_users()
+            if local_data.get("users"):
+                guardar_usuarios_gsheet(local_data)
+                st.sidebar.success("✅ Usuarios migrados a Google Sheets")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Error migrando usuarios: {e}")
+
+# Setup inicial: si no hay usuarios, crear primer admin
+maybe_migrate_users_to_gsheet()
+users_data = load_users()
 # Setup inicial: si no hay usuarios, crear primer admin
 users_data = load_users()
 if not users_data.get("users"):
@@ -1539,6 +1681,29 @@ if is_admin():
                     do_rerun()
 
     # Mostrar lista de usuarios opcionalmente (toggle apagado por defecto)
+    # -- Sincronización Usuarios (admin) --
+    with st.sidebar.expander("🔄 Sincronización Usuarios", expanded=False):
+        st.caption("Sincronizar usuarios entre Google Sheets y archivo local")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📤 A Google Sheets", key="sync_to_gs"):
+                local_data = load_users()
+                guardar_usuarios_gsheet(local_data)
+                st.success("Usuarios sincronizados a Google Sheets")
+        
+        with col2:
+            if st.button("📥 Desde Google Sheets", key="sync_from_gs"):
+                gsheet_data = cargar_usuarios_gsheet()
+                if gsheet_data.get("users"):
+                    USERS_FILE.write_text(
+                        json.dumps(gsheet_data, indent=2, ensure_ascii=False), 
+                        encoding="utf-8"
+                    )
+                    st.success("Usuarios sincronizados desde Google Sheets")
+                    # Forzar rerun para recargar usuarios
+                    do_rerun()
+
     show_users = st.sidebar.checkbox("Mostrar usuarios registrados", value=False, key="admin_show_users")
     if show_users:
         data = load_users()
