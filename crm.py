@@ -306,7 +306,32 @@ def carpeta_docs_cliente(cid: str) -> Path:
     Retorna la carpeta donde se almacenan los documentos para el cliente `cid`.
     Crea la carpeta si no existe.
     """
-    folder = DOCS_DIR / safe_name(str(cid))
+    # Preferir usar el nombre del cliente como carpeta (más legible).
+    # Si no hay nombre, o no se encuentra, fallback al id.
+    try:
+        nombre = get_nombre_by_id(cid) or ""
+    except Exception:
+        nombre = ""
+
+    name_safe = safe_name(nombre) if nombre else ""
+    id_safe = safe_name(str(cid))
+
+    # Si hay un nombre válido, usar/crear esa carpeta. Si existe la carpeta por id,
+    # intentar migrar su contenido a la carpeta por nombre para conservar documentos.
+    if name_safe:
+        name_folder = DOCS_DIR / name_safe
+        id_folder = DOCS_DIR / id_safe
+        try:
+            if id_folder.exists() and id_folder.is_dir() and not name_folder.exists():
+                # mover la carpeta entera para preservar archivos previos
+                shutil.move(str(id_folder), str(name_folder))
+        except Exception:
+            # si la migración falla, no bloquear: seguiremos usando/creando name_folder
+            pass
+        folder = name_folder
+    else:
+        folder = DOCS_DIR / id_safe
+
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -446,10 +471,25 @@ def listar_docs_cliente(cid: str):
     Lista los archivos asociados a un cliente (Path objects), ordenados por nombre.
     Retorna lista vacía si no existe carpeta.
     """
-    folder = DOCS_DIR / safe_name(str(cid))
-    if not folder.exists() or not folder.is_dir():
-        return []
-    return sorted([p for p in folder.iterdir() if p.is_file()], key=lambda p: p.name)
+    try:
+        nombre = get_nombre_by_id(cid) or ""
+    except Exception:
+        nombre = ""
+
+    name_safe = safe_name(nombre) if nombre else ""
+    id_safe = safe_name(str(cid))
+
+    # Preferir la carpeta por nombre si existe; si no, revisar la carpeta por id.
+    if name_safe:
+        folder = DOCS_DIR / name_safe
+        if folder.exists() and folder.is_dir():
+            return sorted([p for p in folder.iterdir() if p.is_file()], key=lambda p: p.name)
+
+    folder_id = DOCS_DIR / id_safe
+    if folder_id.exists() and folder_id.is_dir():
+        return sorted([p for p in folder_id.iterdir() if p.is_file()], key=lambda p: p.name)
+
+    return []
 
 
 def nuevo_id_cliente(df: pd.DataFrame) -> str:
