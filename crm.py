@@ -2005,6 +2005,39 @@ st.sidebar.subheader("📊 Resumen filtrado")
 st.sidebar.metric("Clientes visibles", len(df_ver))
 st.sidebar.metric("Total en base", len(df_cli))
 
+# --- Backup manual en sidebar ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔄 Backup Automático")
+last_backup = st.session_state.get('last_auto_backup', 0)
+if last_backup:
+    try:
+        last_time = datetime.fromtimestamp(last_backup)
+        st.sidebar.caption(f"Último backup: {last_time.strftime('%Y-%m-%d %H:%M')}")
+    except Exception:
+        st.sidebar.caption("Último backup: —")
+else:
+    st.sidebar.caption("Backup: Nunca")
+
+if st.sidebar.button("💾 Backup Manual Ahora"):
+    with st.sidebar:
+        with st.spinner("Haciendo backup..."):
+            # Crear ZIP y ejecutar commit/push
+            try:
+                zip_path = create_backup_zip()
+            except Exception:
+                zip_path = None
+            result = git_auto_commit(zip_path)
+            if "✅" in result:
+                st.success("Backup exitoso")
+                try:
+                    st.session_state['last_auto_backup'] = time.time()
+                except Exception:
+                    pass
+            elif "⏭️" in result:
+                st.info("Sin cambios para backup")
+            else:
+                st.error(f"Error: {result}")
+
 # Añadir botón para descargar Excel del resumen filtrado (df_ver)
 try:
     bio = io.BytesIO()
