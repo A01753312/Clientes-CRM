@@ -83,28 +83,44 @@ def git_auto_commit(backup_zip: Path = None) -> str:
         if result_commit.returncode != 0:
             return f"❌ Error en commit: {result_commit.stderr}"
 
-        # Intentar push. Si existe GITHUB_TOKEN en el entorno, usar URL autenticada
+        # Intentar push. Preferir una URL autenticada si tenemos un token.
         try:
             token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_PAT')
-            if token:
-                # Obtener URL remota y construir una URL autenticada temporal
-                rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
-                remote_url = (rem.stdout or '').strip()
-                if remote_url.startswith('https://'):
-                    auth_url = remote_url.replace('https://', f'https://{token}@', 1)
-                    # Empujar a la rama actual usando la URL autenticada
-                    br = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_path, capture_output=True, text=True)
-                    branch = (br.stdout or 'main').strip()
-                    result_push = subprocess.run(['git', 'push', auth_url, f'HEAD:refs/heads/{branch}'], cwd=repo_path, capture_output=True, text=True, timeout=60)
-                else:
-                    result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+
+            # Si no hay token en el entorno, intentar obtenerlo desde `gh` (si está instalado y autenticado)
+            if not token:
+                try:
+                    gh_tok = subprocess.run(['gh', 'auth', 'token'], cwd=repo_path, capture_output=True, text=True, timeout=10)
+                    if gh_tok.returncode == 0 and gh_tok.stdout.strip():
+                        token = gh_tok.stdout.strip()
+                except Exception:
+                    # gh no disponible o falló; seguiremos sin token
+                    token = token
+
+            # Obtener URL remota
+            rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
+            remote_url = (rem.stdout or '').strip()
+
+            # Empujar preferentemente usando una URL autenticada si es HTTPS y tenemos token
+            if token and remote_url.startswith('https://'):
+                safe_token = token
+                auth_url = remote_url.replace('https://', f'https://{safe_token}@', 1)
+                br = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_path, capture_output=True, text=True)
+                branch = (br.stdout or 'main').strip()
+                result_push = subprocess.run(['git', 'push', auth_url, f'HEAD:refs/heads/{branch}'], cwd=repo_path, capture_output=True, text=True, timeout=60)
             else:
-                result_push = subprocess.run(['git', 'push'], cwd=repo_path, capture_output=True, text=True, timeout=60)
+                # Sin token disponible, intentar push normal (usará credential helper si está configurado)
+                result_push = subprocess.run(['git', 'push', 'origin', 'HEAD'], cwd=repo_path, capture_output=True, text=True, timeout=60)
 
             if result_push.returncode == 0:
                 return f"✅ Backup automático: {commit_message}"
             else:
-                return f"⚠️ Commit ok, pero push falló: {result_push.stderr}"
+                stderr = (result_push.stderr or result_push.stdout or '').strip()
+                # Detección de error clásico de credenciales
+                if 'could not read Username' in stderr or 'Authentication failed' in stderr or 'fatal: could not read Username' in stderr:
+                    return ("⚠️ Commit ok, pero push falló: no hay credenciales para hacer push. "
+                            "Configura 'gh auth login' en este Codespace o proporciona GITHUB_TOKEN en el entorno.")
+                return f"⚠️ Commit ok, pero push falló: {stderr}"
         except Exception as e:
             return f"⚠️ Commit ok, pero push falló: {str(e)}"
     except subprocess.TimeoutExpired:
