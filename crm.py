@@ -56,6 +56,9 @@ DRIVE_ROOT_FOLDER_ID = "1SrYM47mBRzOwr59dbCdsEXJyzf9Pbd_V"
 # === CONFIGURACIÓN GOOGLE SHARED DRIVE ===
 DRIVE_SHARED_DRIVE_ID = "0ADtqpPH_M13HUk9PVA"  # ID de tu Shared Drive
 USE_SHARED_DRIVE = True
+# === CONFIGURACIÓN GOOGLE DRIVE PERSONAL ===
+DRIVE_FOLDER_ID = "1bZchcEjASK3nnrpp4UITvI6cCXwrlabv"  # Tu NUEVA carpeta personal
+USE_DRIVE_STORAGE = True
 
 
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
@@ -282,6 +285,114 @@ def upload_to_shared_drive(file_data, file_name, folder_id):
     except Exception as e:
         st.error(f"❌ Error subiendo archivo a Shared Drive: {e}")
         return None
+
+
+def upload_to_personal_drive(file_data, file_name, folder_id=DRIVE_FOLDER_ID):
+    """Sube archivos a tu carpeta personal de Drive"""
+    service = get_drive_service()
+    if service is None:
+        return None
+    
+    try:
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id]  # Tu carpeta personal
+        }
+        
+        # Convertir a bytes
+        if hasattr(file_data, 'getvalue'):
+            file_bytes = file_data.getvalue()
+        elif isinstance(file_data, bytes):
+            file_bytes = file_data
+        else:
+            file_bytes = file_data
+        
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_bytes), 
+            mimetype='application/octet-stream',
+            resumable=True
+        )
+        
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id,webViewLink,name,createdTime,size'
+        ).execute()
+        
+        try:
+            st.success(f"✅ {file_name} subido a Google Drive")
+        except Exception:
+            pass
+        return file
+        
+    except Exception as e:
+        st.error(f"❌ Error subiendo a Drive personal: {e}")
+        return None
+
+
+def find_or_create_client_personal_folder(client_id, client_name):
+    """Crea carpeta del cliente dentro de tu carpeta personal"""
+    service = get_drive_service()
+    if service is None:
+        return None
+    
+    try:
+        folder_name = f"{client_id}_{safe_name(client_name)}"
+        
+        # Buscar si ya existe la carpeta del cliente
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{DRIVE_FOLDER_ID}' in parents and trashed=false"
+        
+        results = service.files().list(
+            q=query,
+            fields="files(id, name)"
+        ).execute()
+        
+        folders = results.get('files', [])
+        
+        if folders:
+            return folders[0]['id']
+        else:
+            # Crear nueva carpeta para el cliente
+            file_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [DRIVE_FOLDER_ID]
+            }
+            
+            folder = service.files().create(
+                body=file_metadata,
+                fields='id'
+            ).execute()
+            
+            return folder.get('id')
+            
+    except Exception as e:
+        st.error(f"❌ Error con carpeta personal: {e}")
+        return None
+
+
+def verify_personal_drive_access():
+    """Verifica acceso a tu carpeta personal"""
+    service = get_drive_service()
+    if service is None:
+        return False
+    
+    try:
+        # Intentar acceder a la carpeta
+        folder = service.files().get(
+            fileId=DRIVE_FOLDER_ID, 
+            fields='id, name'
+        ).execute()
+        
+        try:
+            st.success(f"✅ Conectado a Google Drive: {folder.get('name', 'Carpeta CRM')}")
+        except Exception:
+            pass
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Error accediendo a carpeta personal: {e}")
+        return False
 
 
 def list_shared_drive_files(folder_id):
@@ -1438,17 +1549,17 @@ def verify_shared_drive_access():
 
 def subir_docs_drive(cid: str, files, prefijo: str = "") -> list:
     """
-    Sube documentos a Google Shared Drive
+    Sube documentos a tu carpeta personal de Drive
     """
     if not cid:
         return []
     
     nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
     
-    # Obtener o crear carpeta del cliente en Shared Drive
-    folder_id = find_or_create_client_shared_folder(cid, nombre_cliente)
+    # Crear/obtener carpeta del cliente
+    folder_id = find_or_create_client_personal_folder(cid, nombre_cliente)
     if not folder_id:
-        st.error("❌ No se pudo crear/obtener la carpeta en Shared Drive")
+        st.error("❌ No se pudo crear carpeta del cliente en Drive")
         return []
     
     saved_files = []
@@ -1459,7 +1570,7 @@ def subir_docs_drive(cid: str, files, prefijo: str = "") -> list:
             fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
             target_name = safe_name(f"{prefijo}{fname}")
             
-            # Leer datos del archivo
+            # Leer datos
             if hasattr(f, "getbuffer"):
                 data = f.getbuffer()
             elif hasattr(f, "read"):
@@ -1467,41 +1578,93 @@ def subir_docs_drive(cid: str, files, prefijo: str = "") -> list:
             else:
                 continue
             
-            # Subir a Shared Drive
-            drive_file = upload_to_shared_drive(data, target_name, folder_id)
+            # Subir a Drive
+            drive_file = upload_to_personal_drive(data, target_name, folder_id)
             if drive_file:
                 saved_files.append({
                     'name': drive_file.get('name'),
                     'drive_id': drive_file.get('id'),
                     'url': drive_file.get('webViewLink'),
                     'created_time': drive_file.get('createdTime'),
-                    'storage': 'shared_drive'
+                    'size': drive_file.get('size', 0),
+                    'storage': 'drive_personal'
                 })
                 
         except Exception as e:
-            st.error(f"❌ Error subiendo {fname} a Shared Drive: {e}")
+            st.error(f"❌ Error subiendo {fname}: {e}")
             continue
     
     return saved_files
 
 
 def listar_docs_drive(cid: str):
-    """
-    Lista documentos del cliente desde Shared Drive
-    """
+    """Lista documentos desde tu carpeta personal de Drive"""
     nombre_cliente = get_nombre_by_id(cid) or "Sin nombre"
     
-    folder_id = find_or_create_client_shared_folder(cid, nombre_cliente)
+    folder_id = find_or_create_client_personal_folder(cid, nombre_cliente)
     if not folder_id:
         return []
     
-    files = list_shared_drive_files(folder_id)
+    service = get_drive_service()
+    if service is None:
+        return []
     
-    # Agregar información de storage
-    for file in files:
-        file['storage'] = 'shared_drive'
+    try:
+        query = f"'{folder_id}' in parents and trashed=false"
+        
+        results = service.files().list(
+            q=query,
+            fields="files(id, name, webViewLink, createdTime, mimeType, size)",
+            orderBy="createdTime desc"
+        ).execute()
+        
+        files = results.get('files', [])
+        
+        # Agregar info de storage
+        for file in files:
+            file['storage'] = 'drive_personal'
+        
+        return files
+        
+    except Exception as e:
+        st.error(f"❌ Error listando archivos: {e}")
+        return []
+
+
+def subir_docs_inteligente(cid: str, files, prefijo: str = "") -> list:
+    """
+    Sistema inteligente: intenta Drive, si falla usa local
+    """
+    # Verificar si Drive está configurado y accesible
+    if USE_DRIVE_STORAGE and DRIVE_FOLDER_ID:
+        try:
+            if verify_personal_drive_access():
+                resultado = subir_docs_drive(cid, files, prefijo)
+                if resultado:
+                    return resultado
+        except Exception:
+            pass
     
-    return files
+    # Fallback a almacenamiento local
+    try:
+        st.info("🔄 Usando almacenamiento local (Google Drive no disponible)")
+    except Exception:
+        pass
+    return subir_docs_local(cid, files, prefijo)
+
+
+def listar_docs_inteligente(cid: str):
+    """Lista documentos inteligentemente"""
+    if USE_DRIVE_STORAGE and DRIVE_FOLDER_ID:
+        try:
+            drive_files = listar_docs_drive(cid)
+            if drive_files:
+                return drive_files
+        except Exception:
+            pass
+    
+    # Fallback a local
+    return listar_docs_local(cid)
 
 
 def initialize_shared_drive():
