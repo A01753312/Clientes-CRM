@@ -67,6 +67,13 @@ def git_auto_commit(backup_zip: Path = None) -> str:
         if result_add.returncode != 0:
             return f"❌ Error agregando archivos: {result_add.stderr}"
 
+        # Asegurar identidad de autor local en este repo para el subprocess
+        try:
+            subprocess.run(['git', 'config', 'user.email', 'crm-auto-backup@kapitaliza.com'], cwd=repo_path, check=False)
+            subprocess.run(['git', 'config', 'user.name', 'CRM Auto Backup'], cwd=repo_path, check=False)
+        except Exception:
+            pass
+
         commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         result_commit = subprocess.run(['git', 'commit', '-m', commit_message], cwd=repo_path, capture_output=True, text=True, timeout=30)
 
