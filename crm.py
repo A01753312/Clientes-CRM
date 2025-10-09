@@ -25,22 +25,7 @@ import shutil
 import altair as alt
 from google.auth.transport.requests import Request
 
-# Debug info in sidebar (Streamlit Cloud troubleshooting)
-try:
-    st.sidebar.markdown("### 🔍 Debug Info")
-    try:
-        if hasattr(st, "secrets"):
-            secrets_loaded = bool(st.secrets)
-            st.sidebar.write(f"Secrets cargados: {'✅' if secrets_loaded else '❌'}")
-            if secrets_loaded:
-                st.sidebar.write(f"Tipo: {st.secrets.get('type', 'No encontrado')}")
-                st.sidebar.write(f"Project ID: {st.secrets.get('project_id', 'No encontrado')}")
-                st.sidebar.write(f"Client email: {st.secrets.get('client_email', 'No encontrado')}")
-    except Exception:
-        pass
-except Exception:
-    # si Streamlit no está inicializado aún, simplemente ignorar
-    pass
+# Debug info removed by user request (sidebar debug block intentionally deleted)
 
 # Paths and data dirs
 DATA_DIR = Path("data")
@@ -116,7 +101,8 @@ def _gs_credentials():
         return None
 
 def _gs_open_worksheet(tab_name: str):
-    """Abre una pestaña con mejor manejo de errores"""
+    """Versión silenciosa: Abre una pestaña, pero no muestra mensajes en la UI después del primer render.
+    Devuelve None en caso de cualquier problema (silencioso)."""
     global _GS_GC, _GS_SH, _GS_WS_CACHE
     try:
         if tab_name in _GS_WS_CACHE:
@@ -124,7 +110,6 @@ def _gs_open_worksheet(tab_name: str):
 
         creds = _gs_credentials()
         if creds is None:
-            st.error("No hay credenciales disponibles para Google Sheets")
             return None
 
         if _GS_GC is None:
@@ -133,24 +118,20 @@ def _gs_open_worksheet(tab_name: str):
         if _GS_SH is None:
             try:
                 _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
-                st.success("✅ Conexión a Google Sheets establecida")
-            except Exception as e:
-                st.error(f"❌ Error abriendo Google Sheet: {str(e)}")
-                st.info(f"Sheet ID: {GSHEET_ID}")
-                st.info("Verifica: 1) El Sheet ID es correcto, 2) La Sheet está compartida con el service account")
+                # silencioso: no mostrar mensajes en UI
+            except Exception:
                 return None
 
         try:
             ws = _GS_SH.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
             ws = _GS_SH.add_worksheet(title=tab_name, rows="5000", cols="50")
-            st.info(f"✅ Nueva pestaña creada: {tab_name}")
+            # silencioso: no mostrar información al usuario
 
         _GS_WS_CACHE[tab_name] = ws
         return ws
         
-    except Exception as e:
-        st.error(f"❌ Error abriendo pestaña {tab_name}: {str(e)}")
+    except Exception:
         return None
 
 def find_logo_path() -> Path | None:
