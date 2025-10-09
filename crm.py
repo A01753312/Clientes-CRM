@@ -874,7 +874,13 @@ def cargar_clientes() -> pd.DataFrame:
             if df is None or df.empty:
                 df = pd.DataFrame(columns=COLUMNS)
             else:
-                st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                # Mensaje temporal (se oculta automáticamente si st.toast está disponible)
+                try:
+                    st.toast(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                except Exception:
+                    # Fallback seguro si st.toast no existe
+                    st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
+                
                 
             df = df.fillna("")
             for c in COLUMNS:
