@@ -8,3 +8,4 @@ gspread
 gspread-dataframe
 google-auth
 altair
+google-api-python-client>=2.0.0
