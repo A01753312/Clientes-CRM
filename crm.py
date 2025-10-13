@@ -15,7 +15,6 @@ import difflib
 import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
-
 import pandas as pd
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
