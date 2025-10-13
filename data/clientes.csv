@@ -1,8 +1,41 @@
 id,nombre,sucursal,asesor,fecha_ingreso,fecha_dispersion,estatus,monto_propuesta,monto_final,segundo_estatus,observaciones,score,telefono,correo,analista,fuente
-<<<<<<< HEAD
-C1000,Sebastian Toro,mundo E,Martha Ortiz,2025-10-05,2025-10-06,PROPUESTA,15000,14500,PEND.DOC.PARA EVALUACION,Prueba de sucursal,720,555111222,ana@example.com,Claudia,Facebook
-C1001,Bandian Torres,TOXQUI,Martha Ortiz,2025-10-08,2025-10-08,DISPERSADO,,,,,,,,,
-C1003,hola,TOXQUI,Martha Ortiz,2025-10-08,2025-10-08,DISPERSADO,,,,,,,,,
-C1004,SAUL TORRES,TOXQUI,Martha Ortiz,2025-10-08,2025-10-08,DISPERSADO,,,,,,,,,
-=======
->>>>>>> 1ee36ff (chore: include workspace backup changes and updated clientes files)
+C-1000,Gabriela Ramírez,,María,2025-08-15,2025-08-22,,100000,100000,,,726,5551105977,gabriela.ramírez@gmail.com,Bruno,Orgánico
+C-1001,Santiago García,,José,2025-07-31,,,150000,,,,785,5588967759,santiago.garcía@gmail.com,Carla,Llamada
+C-1002,Felipe Reyes,,José,2025-10-12,2025-11-10,,150000,,,,833,5544613006,felipe.reyes@gmail.com,Diego,Referral
+C-1003,Alejandra Jiménez,,Lucía,2025-10-12,,,50000,,,,708,5594401409,alejandra.jiménez@gmail.com,Bruno,Landing
+C-1004,Rodrigo Martínez,,María,2025-07-25,2025-08-11,,50000,50000,,,816,5598459702,rodrigo.martínez@gmail.com,Carla,Orgánico
+C-1005,José Díaz,,Pedro,2025-08-21,,,100000,100000,,,638,5580720348,josé.díaz@gmail.com,Bruno,Landing
+C-1006,Fernanda López,,Lucía,2025-07-28,,,75000,,,,755,5519546421,fernanda.lópez@gmail.com,Diego,Referral
+C-1007,Juan Ramírez,,Raúl,2025-08-10,,,100000,,,,575,5586279122,juan.ramírez@gmail.com,Diego,Referral
+C-1008,Paula Martínez,,Pedro,2025-09-02,2025-09-28,,75000,,,,703,5516835995,paula.martínez@gmail.com,Eva,Llamada
+C-1009,Alejandra González,,Pedro,2025-10-02,2025-10-19,,200000,200000,,,825,5557202076,alejandra.gonzález@gmail.com,Diego,Landing
+C-1010,Héctor Hernández,,Raúl,2025-08-21,2025-09-14,,200000,,,,602,5543495389,héctor.hernández@gmail.com,Carla,Facebook
+C-1011,Isabel Martínez,,José,2025-08-05,2025-08-25,,200000,,,,776,5510922961,isabel.martínez@gmail.com,Carla,Facebook
+C-1012,Ernesto Castillo,,María,2025-08-03,,,200000,200000,,,592,5595183518,ernesto.castillo@gmail.com,Diego,Orgánico
+C-1013,Natalia Díaz,,Lucía,2025-08-17,2025-09-25,,150000,150000,,,691,5511047774,natalia.díaz@gmail.com,Ana,Facebook
+C-1014,Ricardo Gómez,,Raúl,2025-09-24,,,50000,50000,,,669,5528471378,ricardo.gómez@gmail.com,Diego,Llamada
+C-1015,Andrés Reyes,,María,2025-08-19,,,75000,,,,561,5514643848,andrés.reyes@gmail.com,Diego,Llamada
+C-1016,José Flores,,Raúl,2025-09-13,2025-10-14,,150000,,,,627,5523471001,josé.flores@gmail.com,Ana,Referral
+C-1017,José Hernández,,José,2025-09-13,2025-10-22,,100000,100000,,,780,5513633244,josé.hernández@gmail.com,Diego,Facebook
+C-1018,Claudia Ortiz,,Raúl,2025-09-09,2025-10-07,,200000,,,,745,5597781275,claudia.ortiz@gmail.com,Diego,Orgánico
+C-1019,Ernesto Rivera,,María,2025-07-21,2025-08-03,,150000,150000,,,818,5534323368,ernesto.rivera@gmail.com,Ana,Llamada
+C-1020,Pablo González,,María,2025-08-08,,,100000,100000,,,745,5569574772,pablo.gonzález@gmail.com,Ana,Facebook
+C-1021,Daniel Torres,,José,2025-07-19,,,75000,,,,681,5593152534,daniel.torres@gmail.com,Eva,Orgánico
+C-1022,María Hernández,,Raúl,2025-07-28,,,50000,,,,725,5585673309,maría.hernández@gmail.com,Carla,Landing
+C-1023,Claudia Rodríguez,,María,2025-08-24,2025-09-17,,200000,200000,,,653,5556232251,claudia.rodríguez@gmail.com,Diego,Referral
+C-1024,Miguel Gómez,,Raúl,2025-09-04,2025-10-12,,50000,50000,,,814,5565071727,miguel.gómez@gmail.com,Diego,Landing
+C-1025,Claudia Hernández,,José,2025-10-10,,,200000,,,,553,5549854445,claudia.hernández@gmail.com,Bruno,Facebook
+C-1026,Valeria Rodríguez,,José,2025-07-29,,,75000,,,,693,5566090703,valeria.rodríguez@gmail.com,Bruno,Referral
+C-1027,Paula Morales,,María,2025-09-29,,,100000,100000,,,683,5588071885,paula.morales@gmail.com,Carla,Orgánico
+C-1028,Santiago González,,María,2025-09-25,2025-09-30,,75000,,,,657,5568624974,santiago.gonzález@gmail.com,Bruno,Facebook
+C-1029,Ana López,,Raúl,2025-09-11,2025-09-17,,150000,150000,,,767,5581011588,ana.lópez@gmail.com,Bruno,Referral
+C-1030,Felipe Reyes,,Pedro,2025-08-12,2025-09-20,,75000,,,,817,5535541267,felipe.reyes@gmail.com,Ana,Referral
+C-1031,Héctor García,,Lucía,2025-09-11,,,50000,,,,820,5553185812,héctor.garcía@gmail.com,Carla,Landing
+C-1032,Sofía Morales,,Pedro,2025-09-08,,,100000,,,,616,5523597126,sofía.morales@gmail.com,Eva,Llamada
+C-1033,Sofía Castillo,,José,2025-09-10,2025-09-20,,150000,,,,796,5537234963,sofía.castillo@gmail.com,Carla,Facebook
+C-1034,Miguel Castillo,,Lucía,2025-08-30,,,100000,100000,,,781,5584086751,miguel.castillo@gmail.com,Ana,Llamada
+C-1035,Santiago Rodríguez,,María,2025-08-14,,,50000,50000,,,700,5547165604,santiago.rodríguez@gmail.com,Diego,Llamada
+C-1036,Elena Martínez,,María,2025-09-20,2025-10-12,,100000,100000,,,601,5542400565,elena.martínez@gmail.com,Ana,Orgánico
+C-1037,Juan López,,Lucía,2025-09-05,,,50000,50000,,,779,5569790167,juan.lópez@gmail.com,Eva,Referral
+C-1038,Daniel López,,Pedro,2025-09-12,2025-09-27,,75000,75000,,,579,5525163322,daniel.lópez@gmail.com,Diego,Landing
+C-1039,Juan Pérez,,María,2025-07-20,2025-08-27,,100000,,,,645,5542494967,juan.pérez@gmail.com,Bruno,Landing
