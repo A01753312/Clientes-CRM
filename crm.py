@@ -1138,22 +1138,23 @@ COLUMNS = [
 # --- Cache versión para invalidar lecturas de clientes ---
 st.session_state.setdefault("cli_cache_ver", 0)
 
-# Cache simple y segura: la función acepta un parámetro `version` que permite
-# invalidar la caché externamente (se usa st.session_state["cli_cache_ver"]).
-# Evita referenciar variables globales no definidas y delega la lectura real
-# a `cargar_clientes()`.
-@st.cache_data(ttl=1800, show_spinner=False, max_entries=5)  # 30 minutos, límite de entradas
+# Cache simple en session_state para evitar problemas con replay de mensajes
+# cuando `cargar_clientes()` emite llamadas a `st.*` (st.toast/st.success).
 def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
-    """
-    Carga los clientes (delegando en `cargar_clientes`) y cachea el resultado.
-    El argumento `version` se usa únicamente para invalidar la caché cuando
-    `st.session_state['cli_cache_ver']` cambia.
-    """
+    key = f"_cached_clientes_v{int(version)}"
+    cached = st.session_state.get(key)
+    if cached is not None and isinstance(cached, pd.DataFrame):
+        return cached
     try:
         df = cargar_clientes()
-        # asegurar que siempre devolvemos un DataFrame consistente
         if df is None:
-            return pd.DataFrame(columns=COLUMNS)
+            df = pd.DataFrame(columns=COLUMNS)
+        # Guardar copia en session_state (no se cachean mensajes de st)
+        try:
+            st.session_state[key] = df.copy()
+        except Exception:
+            # En caso de que el DataFrame no sea serializable, dejar sin cache
+            pass
         return df
     except Exception:
         return pd.DataFrame(columns=COLUMNS)
