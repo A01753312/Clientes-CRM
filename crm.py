@@ -242,9 +242,7 @@ GS_RETRIES = 4           # Intentos de apertura de pestaña
 GS_RETRY_SLEEP = 0.8     # Segundos entre intentos
 
 # Cache de worksheets
-try:
-    _GS_WS_CACHE
-except NameError:
+if "_GS_WS_CACHE" not in globals():
     _GS_WS_CACHE = {}
 
 # --- 2) Apertura de pestañas de Sheets con reintentos ---
