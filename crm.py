@@ -147,15 +147,38 @@ def git_auto_commit(backup_zip: Path = None) -> str:
 
 def _periodic_backup_loop(interval_seconds: int = 3600):
     """Loop que crea un ZIP de backup y hace git_auto_commit cada `interval_seconds` segundos."""
+    last_fingerprint_file = BACKUPS_DIR / "last_docs_fingerprint.txt"
+
+    def _read_last_fp():
+        try:
+            if last_fingerprint_file.exists():
+                return last_fingerprint_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+        return None
+
+    def _write_last_fp(fp: str):
+        try:
+            last_fingerprint_file.write_text(fp or "", encoding="utf-8")
+        except Exception:
+            pass
+
+    last_fp = _read_last_fp()
+
     while True:
         try:
-            zip_path = create_backup_zip()
-            res = git_auto_commit(zip_path)
-            # actualizar st.session_state si existe
-            try:
-                st.session_state['last_auto_backup'] = time.time()
-            except Exception:
-                pass
+            cur_fp = docs_dir_fingerprint()
+            # Solo hacer backup automático si detectamos cambios en docs
+            if cur_fp and cur_fp != last_fp:
+                zip_path = create_backup_zip()
+                res = git_auto_commit(zip_path)
+                # actualizar st.session_state si existe
+                try:
+                    st.session_state['last_auto_backup'] = time.time()
+                except Exception:
+                    pass
+                _write_last_fp(cur_fp)
+                last_fp = cur_fp
         except Exception:
             pass
         time.sleep(interval_seconds)
@@ -417,6 +440,30 @@ def find_logo_path() -> Path | None:
     if altp.exists():
         return altp
     return None
+
+
+def docs_dir_fingerprint() -> str:
+    """Calcula una huella rápida de la carpeta DOCS_DIR basada en rutas relativas, tamaños y mtimes.
+    Se usa para detectar cambios en documentos y decidir si crear backups automáticos.
+    """
+    try:
+        items = []
+        if not DOCS_DIR.exists():
+            return ""
+        for root, _, files in os.walk(DOCS_DIR):
+            for fn in files:
+                try:
+                    p = Path(root) / fn
+                    rel = str(p.relative_to(DOCS_DIR))
+                    stat = p.stat()
+                    items.append(f"{rel}:{stat.st_size}:{int(stat.st_mtime)}")
+                except Exception:
+                    continue
+        items.sort()
+        h = hashlib.md5("|".join(items).encode("utf-8")).hexdigest()
+        return h
+    except Exception:
+        return ""
 
 SUCURSALES_FILE = DATA_DIR / "sucursales.json"
 
@@ -2666,14 +2713,28 @@ with tab_cli:
                                 action="DOCUMENTOS", actor=actor
                             )
 
-                            # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
+                            # Crear backup automático al subir documentos solo si hubo cambios en docs
                             try:
-                                zip_path = create_backup_zip()
-                                msg = git_auto_commit(zip_path)
+                                last_fp_file = BACKUPS_DIR / "last_docs_fingerprint.txt"
+                                prev_fp = None
                                 try:
-                                    st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
+                                    if last_fp_file.exists():
+                                        prev_fp = last_fp_file.read_text(encoding="utf-8").strip()
                                 except Exception:
-                                    pass
+                                    prev_fp = None
+
+                                cur_fp = docs_dir_fingerprint()
+                                if cur_fp and cur_fp != prev_fp:
+                                    zip_path = create_backup_zip()
+                                    msg = git_auto_commit(zip_path)
+                                    try:
+                                        st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
+                                    except Exception:
+                                        pass
+                                    try:
+                                        last_fp_file.write_text(cur_fp, encoding="utf-8")
+                                    except Exception:
+                                        pass
                             except Exception:
                                 # No bloquear el flujo principal si el backup falla
                                 pass
