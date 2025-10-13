@@ -28,6 +28,32 @@ import subprocess
 import time
 import threading
 
+# Helper para obtener token de GitHub desde env, Streamlit secrets o `gh auth token`
+def _github_token():
+    """
+    Obtiene el token de GitHub desde:
+    1. Variable de entorno (GITHUB_TOKEN o GITHUB_PAT)
+    2. Streamlit Secrets
+    3. 'gh auth token' (si está autenticado en Codespaces o local)
+    """
+    tok = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_PAT')
+    if not tok and hasattr(st, "secrets"):
+        try:
+            tok = st.secrets.get('GITHUB_TOKEN') or st.secrets.get('GITHUB_PAT')
+            if tok:
+                os.environ['GITHUB_TOKEN'] = tok  # para que git lo vea
+        except Exception:
+            tok = tok
+    if not tok:
+        try:
+            gh_tok = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=10)
+            if gh_tok.returncode == 0 and gh_tok.stdout.strip():
+                tok = gh_tok.stdout.strip()
+                os.environ['GITHUB_TOKEN'] = tok
+        except Exception:
+            pass
+    return tok
+
 # Debug info removed by user request (sidebar debug block intentionally deleted)
 
 # Paths and data dirs
@@ -85,17 +111,7 @@ def git_auto_commit(backup_zip: Path = None) -> str:
 
         # Intentar push. Preferir una URL autenticada si tenemos un token.
         try:
-            token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_PAT')
-
-            # Si no hay token en el entorno, intentar obtenerlo desde `gh` (si está instalado y autenticado)
-            if not token:
-                try:
-                    gh_tok = subprocess.run(['gh', 'auth', 'token'], cwd=repo_path, capture_output=True, text=True, timeout=10)
-                    if gh_tok.returncode == 0 and gh_tok.stdout.strip():
-                        token = gh_tok.stdout.strip()
-                except Exception:
-                    # gh no disponible o falló; seguiremos sin token
-                    token = token
+            token = _github_token()
 
             # Obtener URL remota
             rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
@@ -2437,6 +2453,18 @@ with tab_cli:
                                 action="DOCUMENTOS", actor=actor
                             )
 
+                            # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
+                            try:
+                                zip_path = create_backup_zip()
+                                msg = git_auto_commit(zip_path)
+                                try:
+                                    st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
+                                except Exception:
+                                    pass
+                            except Exception:
+                                # No bloquear el flujo principal si el backup falla
+                                pass
+
                         st.success(f"Cliente {cid} creado ✅")
                         do_rerun()  # NEW: refresca todo
 
@@ -2919,6 +2947,17 @@ with tab_docs:
                             f"Subidos: {', '.join(subidos_lote)}",
                             action="DOCUMENTOS", actor=actor
                         )
+
+                        # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
+                        try:
+                            zip_path = create_backup_zip()
+                            msg = git_auto_commit(zip_path)
+                            try:
+                                st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
 
                         # refresco inmediato (token)
                         tok_key = f"docs_token_{cid_sel}"
