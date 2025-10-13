@@ -2079,7 +2079,7 @@ def _reset_filters():
         st.session_state["f_ases_ms"] = ASES_ALL.copy()
         st.session_state["f_est_ms"] = EST_ALL.copy()
         # NEW: reset para fuente
-        st.session_state.setdefault("f_fuente", FUENTE_ALL.copy())
+        st.session_state["f_fuente"] = FUENTE_ALL.copy()
         st.session_state["f_fuente_all"] = True
         st.session_state["f_fuente_ms"] = FUENTE_ALL.copy()
         # token opcional para forzar lógica dependiente si la usas
