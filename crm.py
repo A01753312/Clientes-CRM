@@ -232,39 +232,106 @@ def _gs_credentials():
         st.error(f"❌ Error en autenticación Google Sheets: {str(e)}")
         return None
 
+import difflib
+import re
+import time
+from datetime import datetime
+
+# --- 1) Parámetros de reintento para Google Sheets ---
+GS_RETRIES = 4           # Intentos de apertura de pestaña
+GS_RETRY_SLEEP = 0.8     # Segundos entre intentos
+
+# Cache de worksheets
+try:
+    _GS_WS_CACHE
+except NameError:
+    _GS_WS_CACHE = {}
+
+# --- 2) Apertura de pestañas de Sheets con reintentos ---
 def _gs_open_worksheet(tab_name: str):
-    """Versión silenciosa: Abre una pestaña, pero no muestra mensajes en la UI después del primer render.
-    Devuelve None en caso de cualquier problema (silencioso)."""
-    global _GS_GC, _GS_SH, _GS_WS_CACHE
+    """
+    Abre una pestaña del Google Sheet con reintentos y cache.
+    Devuelve el objeto worksheet o None si no fue posible abrir.
+    """
+    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
+        return None
     try:
-        if tab_name in _GS_WS_CACHE:
-            return _GS_WS_CACHE[tab_name]
-
-        creds = _gs_credentials()
-        if creds is None:
-            return None
-
-        if _GS_GC is None:
-            _GS_GC = gspread.authorize(creds)
-        
-        if _GS_SH is None:
+        ws_cached = _GS_WS_CACHE.get(tab_name)
+        if ws_cached is not None:
+            return ws_cached
+        # _GS_SH debe ser un gspread.Spreadsheet ya inicializado en tu app
+        for _ in range(GS_RETRIES):
             try:
-                _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
-                # silencioso: no mostrar mensajes en UI
+                ws = _GS_SH.worksheet(tab_name)
+                _GS_WS_CACHE[tab_name] = ws
+                return ws
             except Exception:
-                return None
-
-        try:
-            ws = _GS_SH.worksheet(tab_name)
-        except gspread.exceptions.WorksheetNotFound:
-            ws = _GS_SH.add_worksheet(title=tab_name, rows="5000", cols="50")
-            # silencioso: no mostrar información al usuario
-
-        _GS_WS_CACHE[tab_name] = ws
-        return ws
-        
+                time.sleep(GS_RETRY_SLEEP)
+        return None
     except Exception:
         return None
+
+# --- 3) Cargar y guardar usuarios en Sheets (silencioso y robusto) ---
+def cargar_usuarios_gsheet() -> dict:
+    """Carga usuarios desde Google Sheets -> {"users": [...]} o vacío si falla."""
+    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
+        return {"users": []}
+    try:
+        ws = _gs_open_worksheet(GSHEET_USERSTAB)
+        if ws is None:
+            return {"users": []}
+        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
+        if df is None or df.empty:
+            return {"users": []}
+        users = []
+        for _, row in df.iterrows():
+            u = {
+                "user": row.get("user", ""),
+                "role": row.get("role", "member"),
+                "salt": row.get("salt", ""),
+                "hash": row.get("hash", "")
+            }
+            if u["user"] and u["salt"] and u["hash"]:
+                users.append(u)
+        return {"users": users}
+    except Exception:
+        return {"users": []}
+
+
+def guardar_usuarios_gsheet(users_data: dict):
+    """Guarda usuarios en Google Sheets; si falla, no rompe la app."""
+    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
+        return
+    try:
+        ws = _gs_open_worksheet(GSHEET_USERSTAB)
+        if ws is None:
+            return
+        users_list = users_data.get("users", [])
+        if not users_list:
+            try:
+                ws.clear()
+            except Exception:
+                pass
+            return
+        df = pd.DataFrame(users_list)
+        for col in ("user", "role", "salt", "hash"):
+            if col not in df.columns:
+                df[col] = ""
+        df = df[["user", "role", "salt", "hash"]]
+        set_with_dataframe(ws, df, include_index=False, include_column_header=True, resize=True)
+    except Exception:
+        pass
+
+# --- 4) (Opcional) Arranque estricto: asegurar que existan pestañas antes de operar ---
+def _require_gsheets_tabs(tabs=("clientes","historial","users")):
+    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
+        return True
+    ok = True
+    for t in tabs:
+        if _gs_open_worksheet(t) is None:
+            ok = False
+            break
+    return ok
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
