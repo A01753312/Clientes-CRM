@@ -256,10 +256,56 @@ def _gs_open_worksheet(tab_name: str):
     if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
         return None
     try:
+        # Intentar inicializar cliente de gspread y abrir el spreadsheet si aún no se hizo
+        try:
+            if (_GS_SH is None) and (_GS_GC is None):
+                # lazy init; si falla, _gs_init dejará los globals en None
+                def _gs_init():
+                    """Inicializa _GS_GC y _GS_SH usando las credenciales disponibles.
+                    Retorna True si tuvo éxito, False en caso contrario.
+                    """
+                    global _GS_GC, _GS_SH
+                    try:
+                        creds = _gs_credentials()
+                        if not creds:
+                            return False
+                        # gspread acepta Credentials objects via authorize or Client
+                        try:
+                            _GS_GC = gspread.authorize(creds)
+                        except Exception:
+                            try:
+                                _GS_GC = gspread.Client(auth=creds)
+                            except Exception:
+                                _GS_GC = None
+
+                        if _GS_GC is None:
+                            return False
+
+                        # Abrir el spreadsheet por ID
+                        try:
+                            # Preferir open_by_key (más estable que open)
+                            _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
+                        except Exception:
+                            try:
+                                _GS_SH = _GS_GC.open(GSHEET_ID)
+                            except Exception:
+                                _GS_SH = None
+                        return _GS_SH is not None
+                    except Exception:
+                        return False
+
+                _gs_init()
+        except Exception:
+            # no bloquear: si la inicialización falla, más abajo retornaremos None
+            pass
         ws_cached = _GS_WS_CACHE.get(tab_name)
         if ws_cached is not None:
             return ws_cached
         # _GS_SH debe ser un gspread.Spreadsheet ya inicializado en tu app
+        # Si no logramos inicializar _GS_SH, salir pronto
+        if _GS_SH is None:
+            return None
+
         for _ in range(GS_RETRIES):
             try:
                 ws = _GS_SH.worksheet(tab_name)
