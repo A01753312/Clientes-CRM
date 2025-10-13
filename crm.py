@@ -1123,11 +1123,31 @@ COLUMNS = [
 # --- Cache versión para invalidar lecturas de clientes ---
 st.session_state.setdefault("cli_cache_ver", 0)
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _cargar_clientes_cacheada(_ver: int) -> pd.DataFrame:
-    # SIEMPRE leer desde Sheets (tu app ya tiene “Sheets primero”)
+# Cache más inteligente con invalidación selectiva
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=5)  # 30 minutos, límite de entradas
+def _cargar_clientes_cacheada() -> pd.DataFrame:
+    # Solo recargar si hay cambios reales
+    if 'data_hash' not in st.session_state:
+        st.session_state.data_hash = None
+    
+    current_hash = hashlib.md5(pd.util.hash_pandas_object(df_cli).values).hexdigest()
+    if st.session_state.data_hash == current_hash:
+        return df_cli  # Devolver datos cacheados
+    
+    st.session_state.data_hash = current_hash
     return cargar_clientes()
 
+def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    # Columnas de catálogo / discretas
+    for col in ["estatus","segundo_estatus","sucursal","asesor","analista","fuente"]:
+        if col in df.columns:
+            df[col] = df[col].astype("category")
+    # Numéricos comunes
+    for col in ["monto_propuesta","monto_final","score"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
+    return df
 
 def cargar_clientes() -> pd.DataFrame:
     """
@@ -2114,8 +2134,8 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-df_cli = cargar_clientes()
-df_cli = optimize_dataframe_memory(df_cli) 
+df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
+df_cli = optimize_dataframe_memory(df_cli)
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
@@ -3244,6 +3264,8 @@ with tab_docs:
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_sel, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                     df_cli = eliminar_cliente(cid_sel, df_cli, borrar_historial=False)
+                    guardar_clientes(df_cli)
+                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                     st.success(f"Cliente {cid_sel} eliminado ✅")
                     do_rerun()
             else:
