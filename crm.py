@@ -315,6 +315,20 @@ def _gs_open_worksheet(tab_name: str):
     except Exception:
         return None
 
+def _gs_optimized_connection():
+    """Devuelve el Spreadsheet activo, reusando si sigue válido."""
+    global _GS_SH, _GS_WS_CACHE
+    if _GS_SH is not None:
+        try:
+            _ = _GS_SH.title   # toque ligero (más barato que worksheets())
+            return _GS_SH
+        except Exception:
+            _GS_SH = None
+            _GS_WS_CACHE.clear()
+    # Forzar init abriendo una worksheet conocida (dispara _gs_init si hace falta)
+    _ = _gs_open_worksheet(GSHEET_TAB)  # usa tu tab principal de clientes
+    return _GS_SH
+
 # --- 3) Cargar y guardar usuarios en Sheets (silencioso y robusto) ---
 def cargar_usuarios_gsheet() -> dict:
     """Carga usuarios desde Google Sheets -> {"users": [...]} o vacío si falla."""
@@ -1086,6 +1100,18 @@ def selectbox_multi(label: str, options: list[str], state_key: str) -> list[str]
 
     return st.session_state[state_key]
 
+def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    # Columnas categóricas (catálogos / valores discretos)
+    for col in ["estatus","segundo_estatus","sucursal","asesor","analista","fuente"]:
+        if col in df.columns:
+            df[col] = df[col].astype("category")
+    # Numéricos comunes
+    for col in ["monto_propuesta","monto_final","score"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
+    return df
+
 # ---------- Sidebar (filtros + acciones) ----------
 # Columnas esperadas en el CSV / DataFrame de clientes
 COLUMNS = [
@@ -1093,6 +1119,15 @@ COLUMNS = [
     "estatus","monto_propuesta","monto_final","segundo_estatus","observaciones",
     "score","telefono","correo","analista","fuente"
 ]
+
+# --- Cache versión para invalidar lecturas de clientes ---
+st.session_state.setdefault("cli_cache_ver", 0)
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _cargar_clientes_cacheada(_ver: int) -> pd.DataFrame:
+    # SIEMPRE leer desde Sheets (tu app ya tiene “Sheets primero”)
+    return cargar_clientes()
+
 
 def cargar_clientes() -> pd.DataFrame:
     """
@@ -1329,7 +1364,8 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = cargar_clientes()
+df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
+
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
 def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
@@ -1387,6 +1423,8 @@ try:
     if changed:
         df_cli = df_fixed
         guardar_clientes(df_cli)
+        st.session_state["cli_cache_ver"] += 1
+
     else:
         df_cli = df_fixed
 except Exception:
@@ -2077,6 +2115,7 @@ st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
 df_cli = cargar_clientes()
+df_cli = optimize_dataframe_memory(df_cli) 
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
@@ -2542,6 +2581,7 @@ with tab_cli:
                         }
                         base = pd.concat([df_cli, pd.DataFrame([nuevo])], ignore_index=True)
                         guardar_clientes(base)
+                        st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                         # registrar creación en historial
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         append_historial(cid, nuevo.get("nombre", ""), "", nuevo.get("estatus", ""), "", nuevo.get("segundo_estatus", ""), f"Creado por {actor}", action="CLIENTE AGREGADO", actor=actor)
@@ -2651,6 +2691,8 @@ with tab_cli:
                     base.at[cid_quick, "segundo_estatus"] = nuevo_seg
                     df_cli = base.reset_index()
                     guardar_clientes(df_cli)
+                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
+
                     # registrar en historial quién hizo el cambio (modificar)
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_quick, nombre_q, estatus_actual, nuevo_estatus, seg_actual, nuevo_seg, obs_q, action="ESTATUS MODIFICADO", actor=actor)
@@ -2701,6 +2743,7 @@ with tab_cli:
                     pass
 
                 guardar_clientes(df_cli)
+                st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                 st.success("Cambios guardados ✅")
                 # Forzar reconstrucción de filtros de asesores en el sidebar
                 try:
@@ -2735,6 +2778,8 @@ with tab_cli:
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         append_historial(cid_del, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                         df_cli = eliminar_cliente(cid_del, df_cli, borrar_historial=False)
+                        guardar_clientes(df_cli)  # <-- persistir cambios
+                        st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                         st.success(f"Cliente {cid_del} eliminado ✅")
                         do_rerun()
             else:
@@ -2748,6 +2793,7 @@ with tab_asesores:
     # Esto asegura que la pestaña de Asesores siempre refleje asesores recién agregados.
     try:
         _df_all = cargar_clientes()
+        _df_all = optimize_dataframe_memory(_df_all)
         # Preparar masks usando los mismos keys/valores del sidebar
         SUC_LABEL_EMPTY = "(Sin sucursal)"
         suc_for_all = _df_all["sucursal"].replace({"": SUC_LABEL_EMPTY})
@@ -3421,6 +3467,7 @@ with tab_import:
             except Exception:
                 pass
             guardar_clientes(base)
+            st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
             st.success(f"Importación completada ✅  |  Agregados: {agregados}  ·  Actualizados: {actualizados}")
 
             # Limpieza del estado del mapeo para que no “se quede” la UI
