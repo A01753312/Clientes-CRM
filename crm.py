@@ -304,13 +304,28 @@ def _gs_open_worksheet(tab_name: str):
         if _GS_SH is None:
             return None
 
+        last_exc = None
         for _ in range(GS_RETRIES):
             try:
                 ws = _GS_SH.worksheet(tab_name)
                 _GS_WS_CACHE[tab_name] = ws
                 return ws
-            except Exception:
+            except Exception as e:
+                last_exc = e
+                # pequeño delay entre reintentos
                 time.sleep(GS_RETRY_SLEEP)
+
+        # Si llegamos aquí no pudimos abrir la pestaña. Intentar listar pestañas
+        # disponibles para diagnosticar (imprime en consola, no rompe la app).
+        try:
+            try:
+                sheets = _GS_SH.worksheets()
+                titles = [s.title for s in sheets]
+            except Exception:
+                titles = None
+            print(f"⚠️ _gs_open_worksheet: no se pudo abrir pestaña '{tab_name}'. Última excepción: {repr(last_exc)}. Tabs disponibles: {titles}")
+        except Exception:
+            pass
         return None
     except Exception:
         return None
