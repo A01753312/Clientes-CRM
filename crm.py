@@ -1123,19 +1123,25 @@ COLUMNS = [
 # --- Cache versión para invalidar lecturas de clientes ---
 st.session_state.setdefault("cli_cache_ver", 0)
 
-# Cache más inteligente con invalidación selectiva
+# Cache simple y segura: la función acepta un parámetro `version` que permite
+# invalidar la caché externamente (se usa st.session_state["cli_cache_ver"]).
+# Evita referenciar variables globales no definidas y delega la lectura real
+# a `cargar_clientes()`.
 @st.cache_data(ttl=1800, show_spinner=False, max_entries=5)  # 30 minutos, límite de entradas
-def _cargar_clientes_cacheada() -> pd.DataFrame:
-    # Solo recargar si hay cambios reales
-    if 'data_hash' not in st.session_state:
-        st.session_state.data_hash = None
-    
-    current_hash = hashlib.md5(pd.util.hash_pandas_object(df_cli).values).hexdigest()
-    if st.session_state.data_hash == current_hash:
-        return df_cli  # Devolver datos cacheados
-    
-    st.session_state.data_hash = current_hash
-    return cargar_clientes()
+def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
+    """
+    Carga los clientes (delegando en `cargar_clientes`) y cachea el resultado.
+    El argumento `version` se usa únicamente para invalidar la caché cuando
+    `st.session_state['cli_cache_ver']` cambia.
+    """
+    try:
+        df = cargar_clientes()
+        # asegurar que siempre devolvemos un DataFrame consistente
+        if df is None:
+            return pd.DataFrame(columns=COLUMNS)
+        return df
+    except Exception:
+        return pd.DataFrame(columns=COLUMNS)
 
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -1384,7 +1390,7 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
+df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
 
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
@@ -2134,7 +2140,7 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
+df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
 df_cli = optimize_dataframe_memory(df_cli)
 
 # Opciones base
