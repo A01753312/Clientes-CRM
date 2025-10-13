@@ -13,7 +13,7 @@ import hashlib
 import secrets
 import difflib
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -77,10 +77,130 @@ def create_backup_zip() -> Path:
         return Path(zip_path)
     except Exception:
         return None
+import logging
+
+# --- Mejor manejo de backups y logging (FIX #6) ---
+LOG_DIR = DATA_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_DIR / "crm.log"),
+    ]
+)
+logger = logging.getLogger("CRM")
+
+BACKUP_CONFIG = {
+    "enabled": True,
+    "auto_interval_seconds": 3600,
+    "max_backups_local": 10,
+    "max_backup_age_days": 30,
+}
+
+BACKUP_MANIFEST = BACKUPS_DIR / "manifest.json"
+
+def load_backup_manifest() -> dict:
+    try:
+        if BACKUP_MANIFEST.exists():
+            return json.loads(BACKUP_MANIFEST.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.error(f"Error cargando manifest: {e}")
+    return {"backups": [], "last_backup": None}
+
+def save_backup_manifest(manifest: dict):
+    try:
+        BACKUP_MANIFEST.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error guardando manifest: {e}")
+
+def get_backup_size(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+    except Exception:
+        return "?"
+
+def cleanup_old_backups():
+    """Limpia backups antiguos según configuración."""
+    try:
+        manifest = load_backup_manifest()
+        backups = manifest.get("backups", [])
+        
+        # Borrar si son muy viejos
+        cutoff = datetime.now() - timedelta(days=BACKUP_CONFIG["max_backup_age_days"])
+        backups_new = []
+        
+        for b in backups:
+            try:
+                b_time = datetime.fromisoformat(b["timestamp"])
+                if b_time < cutoff:
+                    Path(b["path"]).unlink(missing_ok=True)
+                    logger.info(f"Backup antiguo eliminado: {b['path']}")
+                    continue
+            except Exception as e:
+                logger.warning(f"Error procesando backup {b}: {e}")
+            
+            backups_new.append(b)
+        
+        # Mantener solo los últimos N
+        if len(backups_new) > BACKUP_CONFIG["max_backups_local"]:
+            for b in backups_new[BACKUP_CONFIG["max_backups_local"]:]:
+                try:
+                    Path(b["path"]).unlink(missing_ok=True)
+                    logger.info(f"Backup excesivo eliminado: {b['path']}")
+                except Exception as e:
+                    logger.error(f"Error eliminando backup: {e}")
+            
+            backups_new = backups_new[:BACKUP_CONFIG["max_backups_local"]]
+        
+        manifest["backups"] = backups_new
+        manifest["last_backup"] = datetime.now().isoformat()
+        save_backup_manifest(manifest)
+        
+    except Exception as e:
+        logger.error(f"Error limpiando backups: {e}")
+
+def create_backup_zip() -> Path | None:
+    try:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_path = shutil.make_archive(
+            str(BACKUPS_DIR / f"backup_{ts}"),
+            'zip',
+            root_dir=str(DATA_DIR.parent),
+            base_dir=DATA_DIR.name
+        )
+        
+        if zip_path:
+            size = get_backup_size(Path(zip_path))
+            logger.info(f"Backup creado: {Path(zip_path).name} ({size})")
+            
+            # Registrar en manifest
+            manifest = load_backup_manifest()
+            manifest["backups"].append({
+                "path": zip_path,
+                "timestamp": datetime.now().isoformat(),
+                "size": size,
+            })
+            save_backup_manifest(manifest)
+            
+            # Limpiar antiguos
+            cleanup_old_backups()
+            
+            return Path(zip_path)
+    except Exception as e:
+        logger.error(f"Error creando backup: {e}")
+    
+    return None
 
 def git_auto_commit(backup_zip: Path = None) -> str:
     """Hace commit y push automático de los datos del CRM y del ZIP de backup opcional.
     Retorna un mensaje con el resultado.
+    Esta versión usa logging para reportar fallos y se llama desde el worker.
     """
     try:
         repo_path = Path(__file__).parent
@@ -88,12 +208,11 @@ def git_auto_commit(backup_zip: Path = None) -> str:
         if backup_zip:
             paths_to_add.append(str(backup_zip))
 
-        # git add
         result_add = subprocess.run(['git', 'add', *paths_to_add], cwd=repo_path, capture_output=True, text=True, timeout=30)
         if result_add.returncode != 0:
+            logger.error(f"Error agregando archivos: {result_add.stderr}")
             return f"❌ Error agregando archivos: {result_add.stderr}"
 
-        # Asegurar identidad de autor local en este repo para el subprocess
         try:
             subprocess.run(['git', 'config', 'user.email', 'crm-auto-backup@kapitaliza.com'], cwd=repo_path, check=False)
             subprocess.run(['git', 'config', 'user.name', 'CRM Auto Backup'], cwd=repo_path, check=False)
@@ -102,22 +221,17 @@ def git_auto_commit(backup_zip: Path = None) -> str:
 
         commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         result_commit = subprocess.run(['git', 'commit', '-m', commit_message], cwd=repo_path, capture_output=True, text=True, timeout=30)
-
         if "nothing to commit" in (result_commit.stdout or "") or "nada para hacer commit" in (result_commit.stdout or ""):
             return "⏭️ Sin cambios para commit"
-
         if result_commit.returncode != 0:
+            logger.error(f"Error en commit: {result_commit.stderr}")
             return f"❌ Error en commit: {result_commit.stderr}"
 
-        # Intentar push. Preferir una URL autenticada si tenemos un token.
         try:
             token = _github_token()
-
-            # Obtener URL remota
             rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
             remote_url = (rem.stdout or '').strip()
 
-            # Empujar preferentemente usando una URL autenticada si es HTTPS y tenemos token
             if token and remote_url.startswith('https://'):
                 safe_token = token
                 auth_url = remote_url.replace('https://', f'https://{safe_token}@', 1)
@@ -125,23 +239,26 @@ def git_auto_commit(backup_zip: Path = None) -> str:
                 branch = (br.stdout or 'main').strip()
                 result_push = subprocess.run(['git', 'push', auth_url, f'HEAD:refs/heads/{branch}'], cwd=repo_path, capture_output=True, text=True, timeout=60)
             else:
-                # Sin token disponible, intentar push normal (usará credential helper si está configurado)
                 result_push = subprocess.run(['git', 'push', 'origin', 'HEAD'], cwd=repo_path, capture_output=True, text=True, timeout=60)
 
             if result_push.returncode == 0:
                 return f"✅ Backup automático: {commit_message}"
             else:
                 stderr = (result_push.stderr or result_push.stdout or '').strip()
-                # Detección de error clásico de credenciales
                 if 'could not read Username' in stderr or 'Authentication failed' in stderr or 'fatal: could not read Username' in stderr:
+                    logger.warning("Commit ok, pero push falló: no hay credenciales para hacer push")
                     return ("⚠️ Commit ok, pero push falló: no hay credenciales para hacer push. "
                             "Configura 'gh auth login' en este Codespace o proporciona GITHUB_TOKEN en el entorno.")
+                logger.error(f"Push falló: {stderr}")
                 return f"⚠️ Commit ok, pero push falló: {stderr}"
         except Exception as e:
+            logger.error(f"Error empujando cambios: {e}")
             return f"⚠️ Commit ok, pero push falló: {str(e)}"
     except subprocess.TimeoutExpired:
+        logger.error("Timeout en operación git")
         return "❌ Timeout en operación git"
     except Exception as e:
+        logger.error(f"Error general en git_auto_commit: {e}")
         return f"❌ Error general: {str(e)}"
 
 
@@ -432,8 +549,22 @@ def save_sucursales(lst: list):
     except Exception:
         pass
 
-# Inicializar lista de sucursales desde disco
-SUCURSALES = load_sucursales()
+# ===== FIX #3: sincronizar config (sucursales/estatus) con cache versionada
+st.session_state.setdefault("config_version", 0)
+
+@st.cache_data(ttl=60)
+def _load_config_cached(_config_version: int):
+    """Carga configuración con cache de 1 minuto."""
+    return {
+        "sucursales": load_sucursales(),
+        "estatus": load_estatus(),
+        "segundo_estatus": load_segundo_estatus(),
+    }
+
+config_cache = _load_config_cached(st.session_state.get("config_version", 0))
+SUCURSALES = config_cache["sucursales"]
+ESTATUS_OPCIONES = config_cache["estatus"]
+SEGUNDO_ESTATUS_OPCIONES = config_cache["segundo_estatus"]
 ESTATUS_FILE = DATA_DIR / "estatus.json"
 SEGUNDO_ESTATUS_FILE = DATA_DIR / "segundo_estatus.json"
 
@@ -458,6 +589,19 @@ def save_estatus(lst: list):
         ESTATUS_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
+
+def invalidate_config_cache():
+    """Invalida cache de configuración cuando cambia algo."""
+    st.session_state["config_version"] = st.session_state.get("config_version", 0) + 1
+
+
+def cleanup_session_state(pattern: str):
+    """Limpia keys de session_state que coincidan con un patrón.
+    Ej: cleanup_session_state('form_') limpia 'form_*'
+    """
+    keys_to_remove = [k for k in st.session_state.keys() if pattern in k]
+    for k in keys_to_remove:
+        st.session_state.pop(k, None)
 
 def load_segundo_estatus() -> list:
     defaults = ["","DISPERSADO","EN ONBOARDING","PEND.ACEPT.CLIENTE","APROB.CON PROPUESTA","PEND.DOC.PARA EVALUACION","RECH.SOBREENDEUDAMIENTO","RECH. TIPO PENSION","RECH.EDAD"]
@@ -1123,9 +1267,63 @@ COLUMNS = [
 # --- Cache versión para invalidar lecturas de clientes ---
 st.session_state.setdefault("cli_cache_ver", 0)
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _cargar_clientes_cacheada(_ver: int) -> pd.DataFrame:
-    # SIEMPRE leer desde Sheets (tu app ya tiene “Sheets primero”)
+def _invalidate_all_caches():
+    """Limpia todos los caches cuando hay cambios en datos.
+    Llamar después de: guardar_clientes(), subir_docs(), etc.
+    """
+    global _GS_WS_CACHE
+    try:
+        # Limpiar cache de worksheets si existe
+        try:
+            if isinstance(_GS_WS_CACHE, dict):
+                _GS_WS_CACHE.clear()
+        except Exception:
+            pass
+
+        # Limpiar claves de filtros en session_state para forzar reconstrucción
+        filter_keys = [
+            "f_suc", "f_ases", "f_est", "f_suc_ms", "f_ases_ms",
+            "f_est_ms", "f_suc_all", "f_ases_all", "f_est_all",
+            "f_fuente", "f_fuente_ms", "f_fuente_all"
+        ]
+        for key in filter_keys:
+            try:
+                st.session_state.pop(key, None)
+            except Exception:
+                pass
+
+        # Forzar recarga de datos y token de filtros
+        try:
+            st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
+        except Exception:
+            pass
+        try:
+            st.session_state["_filters_token"] = st.session_state.get("_filters_token", 0) + 1
+        except Exception:
+            pass
+
+        # Token para refrescar componentes dependientes
+        try:
+            st.session_state["_data_refresh_token"] = datetime.now().isoformat()
+        except Exception:
+            pass
+
+        # Intentar limpiar caches de streamlit si la API está disponible
+        try:
+            if hasattr(st, "cache_data") and hasattr(st.cache_data, "clear"):
+                try:
+                    st.cache_data.clear()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _cargar_clientes_sin_cache() -> pd.DataFrame:
+    """Carga clientes sin cache agresivo. El control de versión
+    se hace manual con st.session_state['cli_cache_ver']."""
     return cargar_clientes()
 
 
@@ -1231,7 +1429,7 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-        # --- Helpers para GSheet append/upsert ---
+    # --- Helpers para GSheet append/upsert ---
         def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
             df = df.copy().fillna("")
             for c in cols:
@@ -1357,6 +1555,11 @@ def guardar_clientes(df: pd.DataFrame):
                     print(f"⚠️ Error al guardar en Google Sheets: {e}")
                 except Exception:
                     pass
+        # Invalidar caches para evitar stale data tras guardar
+        try:
+            _invalidate_all_caches()
+        except Exception:
+            pass
 
     except Exception as e:
         try:
@@ -1364,7 +1567,49 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
+# Cargar clientes: añadir helper para sincronizar editor y un loader cacheado
+def sync_editor_to_dataframe(ed: pd.DataFrame, original_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sincroniza cambios del editor (df_ver, posiblemente filtrado)
+    hacia la base completa (df_cli).
+    Retorna el DataFrame actualizado.
+    """
+    try:
+        base = original_df.copy()
+        for _, row in ed.iterrows():
+            cid = str(row.get("id", "")).strip()
+            if not cid:
+                continue
+            matches = base[base["id"] == cid].index
+            if matches.empty:
+                nuevo = {col: row.get(col, "") for col in COLUMNS}
+                base = pd.concat([base, pd.DataFrame([nuevo])], ignore_index=True)
+            else:
+                idx = matches[0]
+                for col in COLUMNS:
+                    if col in row.index:
+                        base.at[idx, col] = str(row.get(col, ""))
+        return base
+    except Exception as e:
+        try:
+            st.error(f"Error sincronizando datos: {e}")
+        except Exception:
+            pass
+        return original_df
+
+
+# FIX #2: carga inteligente con cache corta (2 minutos) - usar cli_cache_ver para invalidar
+st.session_state.setdefault("cli_cache_ver", 0)
+
+@st.cache_data(ttl=120)
+def _load_clientes_cached(_cache_version: int):
+    """Carga clientes con cache de 2 minutos.
+    El parámetro _cache_version fuerza invalidación manual."""
+    return cargar_clientes()
+
+
+# Inicializar df_cli usando el loader cacheado
+df_cli = _load_clientes_cached(st.session_state["cli_cache_ver"])
 
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
@@ -1639,6 +1884,51 @@ def do_rerun():
     except Exception:
         return
 
+
+def safe_rerun(reason: str = ""):
+    """Fuerza rerun de forma segura, evitando loops.
+    Usa un token por operación (reason) para no repetir reruns idénticos.
+    """
+    try:
+        rerun_token = st.session_state.get("_last_rerun_token", "")
+        op_id = hashlib.md5((reason or "").encode()).hexdigest()[:8]
+        new_token = f"{datetime.now().isoformat()}_{op_id}"
+        if new_token != rerun_token:
+            st.session_state["_last_rerun_token"] = new_token
+            try:
+                # Intentar la API moderna primero
+                if hasattr(st, "rerun"):
+                    try:
+                        st.rerun()
+                        return
+                    except Exception:
+                        pass
+                if hasattr(st, "experimental_rerun"):
+                    try:
+                        st.experimental_rerun()
+                        return
+                    except Exception:
+                        pass
+                # Fallbacks: usar las excepciones internas (compat)
+                try:
+                    from streamlit.runtime.scriptrunner import RerunException  # type: ignore
+                    raise RerunException("Requested rerun")
+                except Exception:
+                    try:
+                        from streamlit.script_runner import RerunException as _RerunOld  # type: ignore
+                        raise _RerunOld("Requested rerun (old)")
+                    except Exception:
+                        # última opción: toggle in session_state y st.stop()
+                        st.session_state["_need_rerun"] = not st.session_state.get("_need_rerun", False)
+                        try:
+                            st.stop()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 def _hash_pw_pbkdf2(password: str, salt_hex: str | None = None) -> tuple[str, str]:
     if not salt_hex:
         salt_hex = secrets.token_hex(16)
@@ -1890,7 +2180,7 @@ if not users_data.get("users"):
                 ok, msg = add_user(_user, _pw1, role="admin")
                 if ok:
                     st.success("Administrador creado. Inicia sesión.")
-                    do_rerun()
+                    safe_rerun("admin_created")
                 else:
                     st.error(msg)
 
@@ -1931,7 +2221,7 @@ if st.sidebar.button("Cerrar sesión"):
               "new_user_user","new_user_pw1","new_user_pw2",
               "setup_user","setup_pw1","setup_pw2"):
         st.session_state.pop(k, None)
-    do_rerun()
+    safe_rerun("logout")
 
 if is_admin():
     # Agregar miembro del equipo: mostrar dentro de un expander para ahorrar espacio
@@ -1955,7 +2245,7 @@ if is_admin():
                 st.toast(msg, icon="✅" if ok else "🚫")
                 if ok:
                     # Forzar rerun para refrescar el sidebar y limpiar el form
-                    do_rerun()
+                    safe_rerun("user_added")
 
     # Mostrar lista de usuarios opcionalmente (toggle apagado por defecto)
     # -- Sincronización Usuarios (admin) --
@@ -1973,13 +2263,16 @@ if is_admin():
             if st.button("📥 Desde Google Sheets", key="sync_from_gs"):
                 gsheet_data = cargar_usuarios_gsheet()
                 if gsheet_data.get("users"):
-                    USERS_FILE.write_text(
-                        json.dumps(gsheet_data, indent=2, ensure_ascii=False), 
-                        encoding="utf-8"
-                    )
+                    try:
+                        USERS_FILE.write_text(
+                            json.dumps(gsheet_data, indent=2, ensure_ascii=False),
+                            encoding="utf-8"
+                        )
+                    except Exception:
+                        pass
                     st.success("Usuarios sincronizados desde Google Sheets")
                     # Forzar rerun para recargar usuarios
-                    do_rerun()
+                    safe_rerun("users_synced_from_gs")
 
     show_users = st.sidebar.checkbox("Mostrar usuarios registrados", value=False, key="admin_show_users")
     if show_users:
@@ -2006,7 +2299,7 @@ if is_admin():
                             if st.sidebar.button("Eliminar", key=f"del_{uname}"):
                                 # activar el modo de confirmación
                                 st.session_state[confirm_key] = True
-                                do_rerun()
+                                safe_rerun("confirm_del_user")
                         else:
                             # Usar columnas del sidebar para mantener todo horizontal y evitar wrapping
                             c1, c2, c3 = st.sidebar.columns([3,1,1])
@@ -2024,14 +2317,14 @@ if is_admin():
                                         st.session_state.pop(confirm_key, None)
                                         st.session_state.pop(confirm_input_key, None)
                                         if eliminar:
-                                            do_rerun()
+                                            safe_rerun("user_deleted")
                                     else:
                                         st.toast("El texto no coincide. Escribe el nombre exacto para confirmar.", icon="🚫")
                             with c3:
                                 if st.sidebar.button("Cancelar", key=f"confirm_cancel_{uname}"):
                                     st.session_state.pop(confirm_key, None)
                                     st.session_state.pop(confirm_input_key, None)
-                                    do_rerun()
+                                    safe_rerun("cancel_confirm_del_user")
                     else:
                         st.write("")
 
@@ -2058,7 +2351,8 @@ if is_admin():
                     st.toast(f"Sucursal '{news}' agregada.", icon="✅")
                     # limpiar campo y forzar rerun para que el sidebar recargue
                     st.session_state.pop("admin_new_sucursal", None)
-                    do_rerun()
+                    invalidate_config_cache()
+                    safe_rerun("sucursal_added")
 
         # Listado con opción de eliminar (confirmación)
         if SUCURSALES:
@@ -2074,7 +2368,7 @@ if is_admin():
                         if st.button("Eliminar", key=del_key):
                             # activar confirmación
                             st.session_state[conf_key] = True
-                            do_rerun()
+                            safe_rerun("confirm_del_sucursal")
                     else:
                         # verificar que no haya clientes usando esa sucursal
                         in_use = False
@@ -2090,7 +2384,7 @@ if is_admin():
                             st.write("En uso")
                             if st.button("Cancelar", key=f"cancel_del_suc_{s}"):
                                 st.session_state.pop(conf_key, None)
-                                do_rerun()
+                                safe_rerun("cancel_del_sucursal")
                         else:
                             # pedir confirmación final
                             colc1, colc2 = st.columns([2,1])
@@ -2104,11 +2398,11 @@ if is_admin():
                                         # no bloquear si falla
                                         pass
                                     st.session_state.pop(conf_key, None)
-                                    do_rerun()
+                                    safe_rerun("sucursal_deleted")
                             with colc2:
                                 if st.button("Cancelar", key=f"cancel_del_suc_{s}"):
                                     st.session_state.pop(conf_key, None)
-                                    do_rerun()
+                                    safe_rerun("cancel_del_sucursal_2")
 
 # ---------- Sidebar (filtros + acciones) ----------
 st.sidebar.title("👤 CRM")
@@ -2488,6 +2782,11 @@ with tab_cli:
     st.subheader("➕ Agregar cliente")
     with st.expander("Formulario de alta", expanded=False):  # UI más limpia
 
+        # Limpiar estado anterior si existe
+        if st.session_state.get("_prev_tab") != "tab_cli":
+            cleanup_session_state("form_")
+            st.session_state["_prev_tab"] = "tab_cli"
+
         # --- NEW: eliminar el selectbox "Asesor" (se pide quitar el "botoncito").
         # Mantener sólo el checkbox para crear un nuevo asesor y el input para su nombre.
         st.checkbox("Nuevo asesor (marca para escribir nombre y apellido)", key="form_new_asesor_toggle", help="Marca para ingresar manualmente el nombre y apellido del asesor")
@@ -2617,7 +2916,7 @@ with tab_cli:
                                 pass
 
                         st.success(f"Cliente {cid} creado ✅")
-                        do_rerun()  # NEW: refresca todo
+                        safe_rerun("cliente_creado")  # NEW: refresca todo de forma segura
 
     st.subheader("📋 Lista de clientes")
     if df_ver.empty:
@@ -2697,62 +2996,70 @@ with tab_cli:
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_quick, nombre_q, estatus_actual, nuevo_estatus, seg_actual, nuevo_seg, obs_q, action="ESTATUS MODIFICADO", actor=actor)
                     st.success(f"Estatus actualizado para {cid_quick} ✅")
-                    do_rerun()
+                    safe_rerun("estatus_actualizado")
 
         col_save, col_del = st.columns([1,1])
         with col_save:
             if st.button("💾 Guardar cambios"):
-                # conservar copia original para detectar cambios y registrar historial
-                original_df = df_cli.copy()
-                base = df_cli.set_index("id")
-                for _, row in ed.iterrows():
-                    cid = row["id"]
-                    for k in COLUMNS:
-                        if k == "id":
-                            continue
-                        base.at[cid, k] = str(row.get(k, ""))
-                # NORMALIZAR/UNIFICAR asesores en el dataframe antes de guardar
-                for idx in base.index:
-                    base.at[idx, "asesor"] = find_matching_asesor(base.at[idx, "asesor"], base.reset_index())
-                df_cli = base.reset_index()
-                # registrar en historial los cambios por fila (si hay diferencias relevantes)
                 try:
-                    actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
+                    original_df = df_cli.copy()
+
+                    # ← USAR LA NUEVA FUNCIÓN
+                    df_cli = sync_editor_to_dataframe(ed, df_cli)
+
+                    # Normalizar asesores
                     for idx in df_cli.index:
-                        cid = df_cli.at[idx, "id"]
-                        old_row = original_df[original_df["id"] == cid]
-                        if not old_row.empty:
-                            old_row = old_row.iloc[0]
-                            # comparar estatus y segundo estatus y también detectar cambios en otras columnas
+                        if "asesor" in df_cli.columns:
+                            df_cli.at[idx, "asesor"] = find_matching_asesor(
+                                df_cli.at[idx, "asesor"], 
+                                df_cli
+                            )
+
+                    # Registrar cambios en historial
+                    actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
+                    for _, row in ed.iterrows():
+                        cid = str(row.get("id", "")).strip()
+                        if not cid:
+                            continue
+
+                        old_rows = original_df[original_df["id"] == cid]
+                        if not old_rows.empty:
+                            old_row = old_rows.iloc[0]
                             diffs = []
-                            for c in COLUMNS:
-                                if c == "id":
+                            for col in COLUMNS:
+                                if col == "id":
                                     continue
-                                oldv = str(old_row.get(c, ""))
-                                newv = str(df_cli.at[idx, c])
+                                oldv = str(old_row.get(col, ""))
+                                newv = str(row.get(col, ""))
                                 if oldv != newv:
-                                    diffs.append(c)
+                                    diffs.append(f"{col}: {oldv[:20]} → {newv[:20]}")
+
                             if diffs:
                                 est_old = old_row.get("estatus", "")
-                                est_new = df_cli.at[idx, "estatus"] if "estatus" in df_cli.columns else ""
+                                est_new = row.get("estatus", "")
                                 seg_old = old_row.get("segundo_estatus", "")
-                                seg_new = df_cli.at[idx, "segundo_estatus"] if "segundo_estatus" in df_cli.columns else ""
-                                obs = "Campos cambiados: " + ",".join(diffs)
-                                append_historial(cid, df_cli.at[idx, "nombre"], est_old, est_new, seg_old, seg_new, obs, action="ESTATUS MODIFICADO", actor=actor)
-                except Exception:
-                    pass
+                                seg_new = row.get("segundo_estatus", "")
+                                obs = "Cambios: " + " | ".join(diffs[:3])
 
-                guardar_clientes(df_cli)
-                st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
-                st.success("Cambios guardados ✅")
-                # Forzar reconstrucción de filtros de asesores en el sidebar
-                try:
-                    for _k in ("f_ases", "f_ases_ms", "f_ases_all"):
-                        st.session_state.pop(_k, None)
-                    st.session_state["_filters_token"] = st.session_state.get("_filters_token", 0) + 1
-                except Exception:
-                    pass
-                do_rerun()
+                                append_historial(
+                                    cid,
+                                    df_cli[df_cli["id"] == cid].iloc[0]["nombre"] if not df_cli[df_cli["id"] == cid].empty else "",
+                                    est_old, est_new,
+                                    seg_old, seg_new,
+                                    obs,
+                                    action="ESTATUS MODIFICADO",
+                                    actor=actor
+                                )
+
+                    # Guardar (esto limpia caches automáticamente)
+                    guardar_clientes(df_cli)
+                    st.success("Cambios guardados ✅")
+
+                    # Refrescar estado
+                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
+                    safe_rerun("cambios_guardados")
+                except Exception as e:
+                    st.error(f"Error guardando cambios: {e}")
 
         with col_del:
             st.caption("Eliminar cliente (Siempre dar doble click para confirmar)")
@@ -2781,7 +3088,7 @@ with tab_cli:
                         guardar_clientes(df_cli)  # <-- persistir cambios
                         st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                         st.success(f"Cliente {cid_del} eliminado ✅")
-                        do_rerun()
+                        safe_rerun("cliente_eliminado")
             else:
                 st.info("No tienes permiso para eliminar clientes.")
 
@@ -3120,6 +3427,13 @@ with tab_docs:
                         tok_key = f"docs_token_{cid_sel}"
                         st.session_state[tok_key] = st.session_state.get(tok_key, 0) + 1
                         st.success(f"Archivo(s) subido(s): {len(subidos_lote)} ✅")
+
+                        # IMPORTANTE: limpiar caches y refrescar la app
+                        try:
+                            _invalidate_all_caches()
+                        except Exception:
+                            pass
+                        safe_rerun("docs_subidos")
                     else:
                         st.info("No seleccionaste archivos para subir.")
 
@@ -3245,7 +3559,7 @@ with tab_docs:
                     append_historial(cid_sel, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                     df_cli = eliminar_cliente(cid_sel, df_cli, borrar_historial=False)
                     st.success(f"Cliente {cid_sel} eliminado ✅")
-                    do_rerun()
+                    safe_rerun("cliente_eliminado_docs")
             else:
                 st.info("Solo el administrador puede eliminar clientes.")
 
@@ -3368,11 +3682,13 @@ with tab_import:
             if nuevos_est:
                 ESTATUS_OPCIONES.extend([e for e in nuevos_est if e.strip()])
                 save_estatus(ESTATUS_OPCIONES)
+                invalidate_config_cache()
                 st.info(f"Se agregaron {len(nuevos_est)} estatus: {', '.join(nuevos_est)}")
 
             if nuevos_seg:
                 SEGUNDO_ESTATUS_OPCIONES.extend([e for e in nuevos_seg if e.strip() or e == ""])
                 save_segundo_estatus(SEGUNDO_ESTATUS_OPCIONES)
+                invalidate_config_cache()
                 st.info(f"Se agregaron {len(nuevos_seg)} segundo estatus: {', '.join([x if x else '(vacío)' for x in nuevos_seg])}")
 
             with st.expander("Previsualización mapeada", expanded=False):
@@ -3392,6 +3708,73 @@ with tab_import:
                     df_norm[fcol] = pd.to_datetime(df_norm[fcol], errors="ignore").astype(str).replace("NaT","")
                 except Exception:
                     pass
+
+            # ===== FIX #4: Validación previa a la importación (data quality)
+            def validate_cliente_row(row: pd.Series) -> tuple[bool, list[str]]:
+                """
+                Valida una fila de cliente. Retorna (es_válido, lista_de_errores).
+                """
+                errores = []
+                # Campos requeridos
+                if not str(row.get("nombre", "")).strip():
+                    errores.append("Nombre es obligatorio")
+                if not str(row.get("sucursal", "")).strip():
+                    errores.append("Sucursal es obligatoria")
+
+                # Validar fechas
+                try:
+                    f_ingreso = pd.to_datetime(row.get("fecha_ingreso", ""), errors="coerce")
+                    f_dispersion = pd.to_datetime(row.get("fecha_dispersion", ""), errors="coerce")
+                    if pd.isna(f_ingreso):
+                        errores.append(f"Fecha ingreso inválida: {row.get('fecha_ingreso', '')}")
+                    if pd.isna(f_dispersion):
+                        errores.append(f"Fecha dispersión inválida: {row.get('fecha_dispersion', '')}")
+                    if not pd.isna(f_ingreso) and not pd.isna(f_dispersion):
+                        if f_ingreso > f_dispersion:
+                            errores.append(f"Fecha ingreso ({f_ingreso.date()}) > Fecha dispersión ({f_dispersion.date()})")
+                except Exception as e:
+                    errores.append(f"Error validando fechas: {e}")
+
+                # Validar montos (si existen)
+                for campo in ["monto_propuesta", "monto_final"]:
+                    val = str(row.get(campo, "")).strip()
+                    if val:
+                        try:
+                            monto = float(val)
+                            if monto < 0:
+                                errores.append(f"{campo} no puede ser negativo: {monto}")
+                        except ValueError:
+                            errores.append(f"{campo} debe ser un número: {val}")
+
+                # Validar estatus (debe estar en el catálogo)
+                est = str(row.get("estatus", "")).strip()
+                if est and est not in ESTATUS_OPCIONES:
+                    errores.append(f"Estatus '{est}' no está en el catálogo")
+
+                return len(errores) == 0, errores
+
+            st.markdown("#### Validación de datos")
+            if st.button("🔍 Validar antes de importar"):
+                errores_por_fila = {}
+                df_norm_obj = locals().get('df_norm', None)
+                
+                if df_norm_obj is not None and not df_norm_obj.empty:
+                    for idx, row in df_norm_obj.iterrows():
+                        es_valid, errores = validate_cliente_row(row)
+                        if not es_valid:
+                            errores_por_fila[idx] = errores
+                    
+                    if errores_por_fila:
+                        st.error(f"❌ Se encontraron {len(errores_por_fila)} fila(s) con errores:")
+                        with st.expander("Ver detalles de errores"):
+                            for fila_idx, errores in errores_por_fila.items():
+                                st.write(f"**Fila {fila_idx + 2}** (nombre: {df_norm_obj.at[fila_idx, 'nombre']})")
+                                for err in errores:
+                                    st.write(f"  - {err}")
+                    else:
+                        st.success("✅ Todos los datos son válidos. Listo para importar.")
+                else:
+                    st.warning("No hay datos para validar")
 
         if st.button("🚀 Importar ahora", type="primary", key="btn_importar_2"):
             base = df_cli.copy()
@@ -3475,7 +3858,7 @@ with tab_import:
                 if str(k).startswith("map_") or k in ("up_excel_main", "modo_import"):
                     st.session_state.pop(k, None)
 
-            do_rerun()
+            safe_rerun("importar_completado")
         # (Se eliminó una copia duplicada del bloque "Historial de movimientos" aquí)
                
 # ===== Historial =====
@@ -3574,7 +3957,7 @@ with tab_hist:
                     cols = ["id","nombre","estatus_old","estatus_new","segundo_old","segundo_new","observaciones","action","actor","ts"]
                     pd.DataFrame(columns=cols).to_csv(HISTORIAL_CSV, index=False, encoding="utf-8")
                     st.success("Historial eliminado correctamente.")
-                    do_rerun()
+                    safe_rerun("historial_borrado")
                 except Exception as e:
                     st.error(f"Error al borrar historial: {e}")
 
