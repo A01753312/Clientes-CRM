@@ -1296,7 +1296,6 @@ def guardar_clientes(df: pd.DataFrame):
             if df_actual.empty:
                 # Aseguramos encabezado y luego agregamos los datos
                 try:
-                    # actualizar encabezado (por si no existía)
                     ws.update("A1", [COLUMNS])
                 except Exception:
                     pass
@@ -1311,7 +1310,6 @@ def guardar_clientes(df: pd.DataFrame):
                         except Exception:
                             pass
                 return
-                return
 
             df_actual = _ensure_columns(df_actual, COLUMNS)
 
@@ -1325,7 +1323,15 @@ def guardar_clientes(df: pd.DataFrame):
             # 1) Agrega los nuevos
             if nuevos_ids:
                 rows_to_append = df_nuevo.loc[df_nuevo["id"].astype(str).isin(nuevos_ids), COLUMNS].values.tolist()
-                ws.append_rows(rows_to_append, value_input_option="RAW")
+                try:
+                    ws.append_rows(rows_to_append, value_input_option="RAW")
+                except Exception:
+                    # fallback a set_with_dataframe si append falla
+                    try:
+                        set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
+                        return
+                    except Exception:
+                        pass
 
             # 2) Actualiza los existentes (si cambian)
             updates = []
@@ -1352,10 +1358,24 @@ def guardar_clientes(df: pd.DataFrame):
                 try:
                     ws.batch_update([{"range": u["range"], "values": u["values"]} for u in updates], value_input_option="RAW")
                 except Exception as e:
+                    # Registrar el error y hacer fallback escribiendo todo el DataFrame
                     try:
                         print(f"⚠️ Error en batch_update de clientes en GSheets: {e}")
                     except Exception:
                         pass
+                    try:
+                        set_with_dataframe(ws, df_nuevo[COLUMNS], include_index=False, include_column_header=True, resize=True)
+                        try:
+                            print("✅ Fallback: se sobrescribió la pestaña 'clientes' en Google Sheets con set_with_dataframe.")
+                        except Exception:
+                            pass
+                        return
+                    except Exception as e2:
+                        try:
+                            print(f"❌ Fallback falló al escribir clientes en GSheets: {e2}")
+                        except Exception:
+                            pass
+            return
 
         HIST_COLUMNS_DEFAULT = ["fecha","accion","id","nombre","detalle","usuario"]
 
