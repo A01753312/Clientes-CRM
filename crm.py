@@ -147,38 +147,15 @@ def git_auto_commit(backup_zip: Path = None) -> str:
 
 def _periodic_backup_loop(interval_seconds: int = 3600):
     """Loop que crea un ZIP de backup y hace git_auto_commit cada `interval_seconds` segundos."""
-    last_fingerprint_file = BACKUPS_DIR / "last_docs_fingerprint.txt"
-
-    def _read_last_fp():
-        try:
-            if last_fingerprint_file.exists():
-                return last_fingerprint_file.read_text(encoding="utf-8").strip()
-        except Exception:
-            pass
-        return None
-
-    def _write_last_fp(fp: str):
-        try:
-            last_fingerprint_file.write_text(fp or "", encoding="utf-8")
-        except Exception:
-            pass
-
-    last_fp = _read_last_fp()
-
     while True:
         try:
-            cur_fp = docs_dir_fingerprint()
-            # Solo hacer backup automático si detectamos cambios en docs
-            if cur_fp and cur_fp != last_fp:
-                zip_path = create_backup_zip()
-                res = git_auto_commit(zip_path)
-                # actualizar st.session_state si existe
-                try:
-                    st.session_state['last_auto_backup'] = time.time()
-                except Exception:
-                    pass
-                _write_last_fp(cur_fp)
-                last_fp = cur_fp
+            zip_path = create_backup_zip()
+            res = git_auto_commit(zip_path)
+            # actualizar st.session_state si existe
+            try:
+                st.session_state['last_auto_backup'] = time.time()
+            except Exception:
+                pass
         except Exception:
             pass
         time.sleep(interval_seconds)
@@ -327,28 +304,13 @@ def _gs_open_worksheet(tab_name: str):
         if _GS_SH is None:
             return None
 
-        last_exc = None
         for _ in range(GS_RETRIES):
             try:
                 ws = _GS_SH.worksheet(tab_name)
                 _GS_WS_CACHE[tab_name] = ws
                 return ws
-            except Exception as e:
-                last_exc = e
-                # pequeño delay entre reintentos
-                time.sleep(GS_RETRY_SLEEP)
-
-        # Si llegamos aquí no pudimos abrir la pestaña. Intentar listar pestañas
-        # disponibles para diagnosticar (imprime en consola, no rompe la app).
-        try:
-            try:
-                sheets = _GS_SH.worksheets()
-                titles = [s.title for s in sheets]
             except Exception:
-                titles = None
-            print(f"⚠️ _gs_open_worksheet: no se pudo abrir pestaña '{tab_name}'. Última excepción: {repr(last_exc)}. Tabs disponibles: {titles}")
-        except Exception:
-            pass
+                time.sleep(GS_RETRY_SLEEP)
         return None
     except Exception:
         return None
@@ -440,30 +402,6 @@ def find_logo_path() -> Path | None:
     if altp.exists():
         return altp
     return None
-
-
-def docs_dir_fingerprint() -> str:
-    """Calcula una huella rápida de la carpeta DOCS_DIR basada en rutas relativas, tamaños y mtimes.
-    Se usa para detectar cambios en documentos y decidir si crear backups automáticos.
-    """
-    try:
-        items = []
-        if not DOCS_DIR.exists():
-            return ""
-        for root, _, files in os.walk(DOCS_DIR):
-            for fn in files:
-                try:
-                    p = Path(root) / fn
-                    rel = str(p.relative_to(DOCS_DIR))
-                    stat = p.stat()
-                    items.append(f"{rel}:{stat.st_size}:{int(stat.st_mtime)}")
-                except Exception:
-                    continue
-        items.sort()
-        h = hashlib.md5("|".join(items).encode("utf-8")).hexdigest()
-        return h
-    except Exception:
-        return ""
 
 SUCURSALES_FILE = DATA_DIR / "sucursales.json"
 
@@ -1185,38 +1123,11 @@ COLUMNS = [
 # --- Cache versión para invalidar lecturas de clientes ---
 st.session_state.setdefault("cli_cache_ver", 0)
 
-# Cache simple en session_state para evitar problemas con replay de mensajes
-# cuando `cargar_clientes()` emite llamadas a `st.*` (st.toast/st.success).
-def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
-    key = f"_cached_clientes_v{int(version)}"
-    cached = st.session_state.get(key)
-    if cached is not None and isinstance(cached, pd.DataFrame):
-        return cached
-    try:
-        df = cargar_clientes()
-        if df is None:
-            df = pd.DataFrame(columns=COLUMNS)
-        # Guardar copia en session_state (no se cachean mensajes de st)
-        try:
-            st.session_state[key] = df.copy()
-        except Exception:
-            # En caso de que el DataFrame no sea serializable, dejar sin cache
-            pass
-        return df
-    except Exception:
-        return pd.DataFrame(columns=COLUMNS)
+@st.cache_data(ttl=900, show_spinner=False)
+def _cargar_clientes_cacheada(_ver: int) -> pd.DataFrame:
+    # SIEMPRE leer desde Sheets (tu app ya tiene “Sheets primero”)
+    return cargar_clientes()
 
-def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    # Columnas de catálogo / discretas
-    for col in ["estatus","segundo_estatus","sucursal","asesor","analista","fuente"]:
-        if col in df.columns:
-            df[col] = df[col].astype("category")
-    # Numéricos comunes
-    for col in ["monto_propuesta","monto_final","score"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
-    return df
 
 def cargar_clientes() -> pd.DataFrame:
     """
@@ -1359,6 +1270,7 @@ def guardar_clientes(df: pd.DataFrame):
             if df_actual.empty:
                 # Aseguramos encabezado y luego agregamos los datos
                 try:
+                    # actualizar encabezado (por si no existía)
                     ws.update("A1", [COLUMNS])
                 except Exception:
                     pass
@@ -1373,6 +1285,7 @@ def guardar_clientes(df: pd.DataFrame):
                         except Exception:
                             pass
                 return
+                return
 
             df_actual = _ensure_columns(df_actual, COLUMNS)
 
@@ -1386,15 +1299,7 @@ def guardar_clientes(df: pd.DataFrame):
             # 1) Agrega los nuevos
             if nuevos_ids:
                 rows_to_append = df_nuevo.loc[df_nuevo["id"].astype(str).isin(nuevos_ids), COLUMNS].values.tolist()
-                try:
-                    ws.append_rows(rows_to_append, value_input_option="RAW")
-                except Exception:
-                    # fallback a set_with_dataframe si append falla
-                    try:
-                        set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
-                        return
-                    except Exception:
-                        pass
+                ws.append_rows(rows_to_append, value_input_option="RAW")
 
             # 2) Actualiza los existentes (si cambian)
             updates = []
@@ -1421,24 +1326,10 @@ def guardar_clientes(df: pd.DataFrame):
                 try:
                     ws.batch_update([{"range": u["range"], "values": u["values"]} for u in updates], value_input_option="RAW")
                 except Exception as e:
-                    # Registrar el error y hacer fallback escribiendo todo el DataFrame
                     try:
                         print(f"⚠️ Error en batch_update de clientes en GSheets: {e}")
                     except Exception:
                         pass
-                    try:
-                        set_with_dataframe(ws, df_nuevo[COLUMNS], include_index=False, include_column_header=True, resize=True)
-                        try:
-                            print("✅ Fallback: se sobrescribió la pestaña 'clientes' en Google Sheets con set_with_dataframe.")
-                        except Exception:
-                            pass
-                        return
-                    except Exception as e2:
-                        try:
-                            print(f"❌ Fallback falló al escribir clientes en GSheets: {e2}")
-                        except Exception:
-                            pass
-            return
 
         HIST_COLUMNS_DEFAULT = ["fecha","accion","id","nombre","detalle","usuario"]
 
@@ -1473,7 +1364,7 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
+df_cli = _cargar_clientes_cacheada(st.session_state["cli_cache_ver"])
 
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
@@ -2223,8 +2114,8 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
-df_cli = optimize_dataframe_memory(df_cli)
+df_cli = cargar_clientes()
+df_cli = optimize_dataframe_memory(df_cli) 
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
@@ -2690,7 +2581,7 @@ with tab_cli:
                         }
                         base = pd.concat([df_cli, pd.DataFrame([nuevo])], ignore_index=True)
                         guardar_clientes(base)
-                        st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
+                        st.session_state["cli_cache_ver"] += 1
                         # registrar creación en historial
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         append_historial(cid, nuevo.get("nombre", ""), "", nuevo.get("estatus", ""), "", nuevo.get("segundo_estatus", ""), f"Creado por {actor}", action="CLIENTE AGREGADO", actor=actor)
@@ -2713,28 +2604,14 @@ with tab_cli:
                                 action="DOCUMENTOS", actor=actor
                             )
 
-                            # Crear backup automático al subir documentos solo si hubo cambios en docs
+                            # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
                             try:
-                                last_fp_file = BACKUPS_DIR / "last_docs_fingerprint.txt"
-                                prev_fp = None
+                                zip_path = create_backup_zip()
+                                msg = git_auto_commit(zip_path)
                                 try:
-                                    if last_fp_file.exists():
-                                        prev_fp = last_fp_file.read_text(encoding="utf-8").strip()
+                                    st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
                                 except Exception:
-                                    prev_fp = None
-
-                                cur_fp = docs_dir_fingerprint()
-                                if cur_fp and cur_fp != prev_fp:
-                                    zip_path = create_backup_zip()
-                                    msg = git_auto_commit(zip_path)
-                                    try:
-                                        st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
-                                    except Exception:
-                                        pass
-                                    try:
-                                        last_fp_file.write_text(cur_fp, encoding="utf-8")
-                                    except Exception:
-                                        pass
+                                    pass
                             except Exception:
                                 # No bloquear el flujo principal si el backup falla
                                 pass
@@ -3367,8 +3244,6 @@ with tab_docs:
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_sel, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                     df_cli = eliminar_cliente(cid_sel, df_cli, borrar_historial=False)
-                    guardar_clientes(df_cli)
-                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                     st.success(f"Cliente {cid_sel} eliminado ✅")
                     do_rerun()
             else:
@@ -3702,5 +3577,6 @@ with tab_hist:
                     do_rerun()
                 except Exception as e:
                     st.error(f"Error al borrar historial: {e}")
+
 
 
