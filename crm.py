@@ -15,6 +15,7 @@ import difflib
 import unicodedata
 from datetime import date, datetime
 from pathlib import Path
+from crm_lib.utils import safe_name, sort_df_by_dates, canonicalize_from_catalog, optimize_dataframe_memory
 
 import pandas as pd
 import gspread
@@ -27,6 +28,25 @@ from google.auth.transport.requests import Request
 import subprocess
 import time
 import threading
+from crm_lib.core import _norm_key, find_matching_asesor, nuevo_id_cliente
+
+# Opcional: importar módulos seccionados (storage, docs, auth, config)
+try:
+    from crm_lib import storage as crm_storage
+except Exception:
+    crm_storage = None
+try:
+    from crm_lib import docs as crm_docs
+except Exception:
+    crm_docs = None
+try:
+    from crm_lib import auth as crm_auth
+except Exception:
+    crm_auth = None
+try:
+    from crm_lib import config as crm_config
+except Exception:
+    crm_config = None
 
 # Helper para obtener token de GitHub desde env, Streamlit secrets o `gh auth token`
 def _github_token():
@@ -166,6 +186,48 @@ try:
     _backup_thread.start()
 except Exception:
     pass
+
+# Wrappers to delegate to crm_lib modules when available (keeps backward compatibility)
+def _wrap_cargar_clientes():
+    if crm_storage is not None and hasattr(crm_storage, 'cargar_clientes_local'):
+        return crm_storage.cargar_clientes_local()
+    return None
+
+def _wrap_guardar_clientes(df):
+    if crm_storage is not None and hasattr(crm_storage, 'guardar_clientes_local'):
+        return crm_storage.guardar_clientes_local(df)
+    return None
+
+def _wrap_cargar_historial():
+    if crm_storage is not None and hasattr(crm_storage, 'cargar_historial_local'):
+        return crm_storage.cargar_historial_local()
+    return None
+
+def _wrap_guardar_historial(dfh):
+    if crm_storage is not None and hasattr(crm_storage, 'guardar_historial_local'):
+        return crm_storage.guardar_historial_local(dfh)
+    return None
+
+def _wrap_subir_docs(cid, files, prefijo=""):
+    if crm_docs is not None and hasattr(crm_docs, 'subir_docs'):
+        return crm_docs.subir_docs(cid, files, prefijo=prefijo)
+    return []
+
+def _wrap_listar_docs_cliente(cid):
+    if crm_docs is not None and hasattr(crm_docs, 'listar_docs_cliente'):
+        return crm_docs.listar_docs_cliente(cid)
+    return []
+
+def _wrap_add_user(username, password, role='member'):
+    if crm_auth is not None and hasattr(crm_auth, 'add_user_local'):
+        return crm_auth.add_user_local(username, password, role=role)
+    return (False, 'No disponible')
+
+def _wrap_delete_user(username):
+    if crm_auth is not None and hasattr(crm_auth, 'delete_user_local'):
+        return crm_auth.delete_user_local(username)
+    return (False, 'No disponible')
+
 
 # === CONFIGURACIÓN GOOGLE SHEETS ===
 USE_GSHEETS = True   # pon False si quieres trabajar sólo local
@@ -527,42 +589,10 @@ def sort_df_by_dates(df: pd.DataFrame) -> pd.DataFrame:
         return df.sort_values(date_cols, ascending=True, na_position="last").reset_index(drop=True)
     return df
 
-def safe_name(s: str) -> str:
-    if s is None:
-        return ""
-    s = str(s).strip()
-    s = SAFE_NAME_RE.sub("_", s)
-    s = re.sub(r"\s+", " ", s)
-    return s[:150]
-
-# NEW: normalización y búsqueda de asesor existente
-def _norm_key(s: str) -> str:
-    s = (s or "")
-    s = str(s).strip()
-    s = re.sub(r"\s+", " ", s)
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    # usar casefold() en lugar de lower() para una comparación Unicode más robusta
-    return s.casefold()
-
-def find_matching_asesor(name: str, df: pd.DataFrame) -> str:
-    """
-    Si name coincide (normalizado) con algún 'asesor' ya presente en df -> retorna la forma registrada.
-    Si no hay coincidencia, retorna name limpio con capitalización de palabras (o '' si vacío).
-    """
-    name = (name or "").strip()
-    if not name:
-        return ""
-    name_key = _norm_key(name)
-    # buscar en el dataframe por la clave normalizada
-    for a in df["asesor"].fillna("").unique():
-        if not str(a).strip():
-            continue
-        if _norm_key(a) == name_key:
-            return a  # usar la forma ya existente
-    # si no existe, devolver una versión "limpia" con Title Case (mínima transformación)
-    return " ".join(w.capitalize() for w in name.split())
-
+# Helpers provistos por crm_lib.utils:
+# - safe_name
+# - sort_df_by_dates
+# - canonicalize_from_catalog
 
 # ----- Document helpers para manejo de archivos de clientes -----
 def carpeta_docs_cliente(cid: str) -> Path:
@@ -599,51 +629,7 @@ def carpeta_docs_cliente(cid: str) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
-def canonicalize_from_catalog(
-    raw: str,
-    catalog: list[str],
-    extra_synonyms: dict[str, str] | None = None,
-    min_ratio: float = 0.90
-) -> str:
-    """
-    Devuelve el valor 'raw' mapeado al elemento 'canónico' del catálogo más similar:
-    - Igualdad exacta tras normalizar (ignora acentos/case/espacios)
-    - Sinónimos explícitos (opcional)
-    - 'Fuzzy' por similitud (difflib) con umbral min_ratio
-    Si no encuentra nada suficientemente parecido → devuelve 'raw' tal cual.
-    """
-    s = (raw or "").strip()
-    if not s:
-        return s
-
-    key = _norm_key(s)
-
-    # 1) match exacto normalizado
-    for opt in catalog:
-        if _norm_key(opt) == key:
-            return opt
-
-    # 2) sinónimos opcionales (mapa: "en revision" -> "EN REVISIÓN")
-    if extra_synonyms:
-        for k, v in extra_synonyms.items():
-            if _norm_key(k) == key:
-                # devolver el canónico si existe en catálogo; si no, el sinónimo
-                for opt in catalog:
-                    if _norm_key(opt) == _norm_key(v):
-                        return opt
-                return v
-
-    # 3) fuzzy: el más parecido por ratio
-    best, best_r = None, 0.0
-    for opt in catalog:
-        r = difflib.SequenceMatcher(None, key, _norm_key(opt)).ratio()
-        if r > best_r:
-            best_r, best = r, opt
-
-    if best and best_r >= min_ratio:
-        return best
-
-    return s
+# canonicalize_from_catalog provisto por crm_lib.utils
 
 
 def subir_docs(cid: str, files, prefijo: str = "") -> list:
@@ -653,6 +639,13 @@ def subir_docs(cid: str, files, prefijo: str = "") -> list:
     `prefijo` se antepone al nombre del archivo en disco.
     NO escribe en historial; retorna la lista de nombres guardados.
     """
+    # If a separated docs module is available, delegate to it for clarity
+    if crm_docs is not None and hasattr(crm_docs, 'subir_docs'):
+        try:
+            return crm_docs.subir_docs(cid, files, prefijo=prefijo)
+        except Exception:
+            pass
+
     if not cid:
         return []
     folder = carpeta_docs_cliente(cid)
@@ -735,6 +728,13 @@ def listar_docs_cliente(cid: str):
     Lista los archivos asociados a un cliente (Path objects), ordenados por nombre.
     Retorna lista vacía si no existe carpeta.
     """
+    # If a separated docs module is available, delegate to it
+    if crm_docs is not None and hasattr(crm_docs, 'listar_docs_cliente'):
+        try:
+            return crm_docs.listar_docs_cliente(cid)
+        except Exception:
+            pass
+
     try:
         nombre = get_nombre_by_id(cid) or ""
     except Exception:
@@ -756,32 +756,7 @@ def listar_docs_cliente(cid: str):
     return []
 
 
-def nuevo_id_cliente(df: pd.DataFrame) -> str:
-    """
-    Genera un nuevo ID de cliente único con prefijo 'C' basado en los IDs existentes del DataFrame.
-    Si no encuentra IDs del formato C<number>, comienza en C1000.
-    """
-    base_id = 1000
-    try:
-        if df is not None and not df.empty and "id" in df.columns:
-            nums = []
-            for x in df["id"].astype(str):
-                if not x:
-                    continue
-                m = re.match(r"^C(\d+)$", str(x).strip())
-                if m:
-                    try:
-                        nums.append(int(m.group(1)))
-                    except Exception:
-                        continue
-            if nums:
-                base_id = max(nums) + 1
-            else:
-                # fallback: avoid collision con filas existentes
-                base_id = base_id + len(df)
-    except Exception:
-        base_id = base_id
-    return f"C{base_id}"
+# nuevo_id_cliente provisto por crm_lib.core
 
 def get_nombre_by_id(cid: str) -> str:
     """Retorna el nombre del cliente por id de forma segura ('' si no existe)."""
@@ -1115,17 +1090,7 @@ def selectbox_multi(label: str, options: list[str], state_key: str) -> list[str]
 
     return st.session_state[state_key]
 
-def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    # Columnas categóricas (catálogos / valores discretos)
-    for col in ["estatus","segundo_estatus","sucursal","asesor","analista","fuente"]:
-        if col in df.columns:
-            df[col] = df[col].astype("category")
-    # Numéricos comunes
-    for col in ["monto_propuesta","monto_final","score"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
-    return df
+# optimize_dataframe_memory provisto por crm_lib.utils
 
 # ---------- Sidebar (filtros + acciones) ----------
 # Columnas esperadas en el CSV / DataFrame de clientes
@@ -1146,7 +1111,14 @@ def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
     if cached is not None and isinstance(cached, pd.DataFrame):
         return cached
     try:
-        df = cargar_clientes()
+        # Prefer local storage module if available
+        df = None
+        try:
+            df = _wrap_cargar_clientes()
+        except Exception:
+            df = None
+        if df is None:
+            df = cargar_clientes()
         if df is None:
             df = pd.DataFrame(columns=COLUMNS)
         # Guardar copia en session_state (no se cachean mensajes de st)
@@ -1159,17 +1131,7 @@ def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame(columns=COLUMNS)
 
-def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    # Columnas de catálogo / discretas
-    for col in ["estatus","segundo_estatus","sucursal","asesor","analista","fuente"]:
-        if col in df.columns:
-            df[col] = df[col].astype("category")
-    # Numéricos comunes
-    for col in ["monto_propuesta","monto_final","score"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
-    return df
+# optimize_dataframe_memory provisto por crm_lib.utils
 
 def cargar_clientes() -> pd.DataFrame:
     """
@@ -1501,6 +1463,13 @@ def cargar_historial() -> pd.DataFrame:
     """
     # añadimos 'action' y 'actor' para saber quién hizo el cambio y qué tipo fue
     cols = ["id", "nombre", "estatus_old", "estatus_new", "segundo_old", "segundo_new", "observaciones", "action", "actor", "ts"]
+    # Prefer storage module if available
+    try:
+        dfh = _wrap_cargar_historial()
+        if dfh is not None:
+            return dfh
+    except Exception:
+        pass
     try:
         if HISTORIAL_CSV.exists():
             dfh = pd.read_csv(HISTORIAL_CSV, dtype=str).fillna("")
