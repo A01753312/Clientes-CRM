@@ -1098,10 +1098,9 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = cargar_clientes()
-
-# Corregir IDs vacíos o duplicados inmediatamente al cargar
+# Función para corregir IDs duplicados/vacíos
 def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Corrige IDs vacíos o duplicados en el DataFrame"""
     if df is None or df.empty:
         return df
     df = df.copy()
@@ -1145,23 +1144,28 @@ def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
             usados.add(cur)
     return df
 
-try:
-    df_fixed = _fix_missing_or_duplicate_ids(df_cli)
-    # solo guardar si hubo cambios (evitar escribir en disco/Sheets innecesariamente)
+# Función para cargar y corregir datos de clientes
+def cargar_y_corregir_clientes() -> pd.DataFrame:
+    """Carga los clientes y corrige IDs duplicados/vacíos si es necesario"""
+    df_cli = cargar_clientes()
+    
     try:
-        changed = not df_fixed.equals(df_cli)
+        df_fixed = _fix_missing_or_duplicate_ids(df_cli)
+        # solo guardar si hubo cambios (evitar escribir en disco/Sheets innecesariamente)
+        try:
+            changed = not df_fixed.equals(df_cli)
+        except Exception:
+            # en caso de error al comparar, guardar para mantener consistencia
+            changed = True
+        if changed:
+            df_cli = df_fixed
+            guardar_clientes(df_cli)
+        else:
+            df_cli = df_fixed
     except Exception:
-        # en caso de error al comparar, guardar para mantener consistencia
-        changed = True
-    if changed:
-        df_cli = df_fixed
-        guardar_clientes(df_cli)
-    else:
-        df_cli = df_fixed
-except Exception:
-    pass
-
-# ---------- Historial y eliminación de clientes ----------
+        pass
+    
+    return df_cli# ---------- Historial y eliminación de clientes ----------
 HISTORIAL_CSV = DATA_DIR / "historial.csv"
 
 def cargar_historial() -> pd.DataFrame:
@@ -1853,7 +1857,8 @@ if st.sidebar.button("🔄 Recargar datos", help="Fuerza la recarga de datos des
     st.success("✅ Datos recargados desde Google Sheets")
     do_rerun()
 
-df_cli = cargar_clientes()
+# Cargar datos frescos para el sidebar
+df_cli = cargar_y_corregir_clientes()
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
@@ -2023,6 +2028,8 @@ tab_dash, tab_cli, tab_docs, tab_import, tab_hist, tab_asesores = st.tabs(
 # ===== Dashboard =====
 with tab_dash:
     st.subheader("Resumen por estatus")
+    # Cargar datos frescos para el dashboard
+    df_cli = cargar_y_corregir_clientes()
     if df_cli.empty:
         st.info("Sin clientes aún.")
     else:
@@ -2190,6 +2197,9 @@ with tab_dash:
 
 # ===== Clientes (alta + edición) =====
 with tab_cli:
+    # Cargar datos frescos para la pestaña de clientes
+    df_cli = cargar_y_corregir_clientes()
+    
     st.subheader("➕ Agregar cliente")
     with st.expander("Formulario de alta", expanded=False):  # UI más limpia
 
@@ -2479,7 +2489,7 @@ with tab_asesores:
     # Reconstruir la base desde disco y aplicar los filtros actuales del sidebar.
     # Esto asegura que la pestaña de Asesores siempre refleje asesores recién agregados.
     try:
-        _df_all = cargar_clientes()
+        _df_all = cargar_y_corregir_clientes()  # Usar la función que carga datos frescos
         # Preparar masks usando los mismos keys/valores del sidebar
         SUC_LABEL_EMPTY = "(Sin sucursal)"
         suc_for_all = _df_all["sucursal"].replace({"": SUC_LABEL_EMPTY})
@@ -2732,6 +2742,8 @@ if 'tab_docs' not in globals():
 
 with tab_docs:
     st.subheader("📎 Documentos por cliente")
+    # Cargar datos frescos para la pestaña de documentos
+    df_cli = cargar_y_corregir_clientes()
     if df_cli.empty:
         st.info("No hay clientes aún.")
     else:
