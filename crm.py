@@ -1915,34 +1915,43 @@ def _reset_filters():
 
 st.sidebar.button("🔁", key="btn_reset_filters", on_click=_reset_filters)
 
-# Aplicar filtros: si no hay selección, usar una máscara de 'True' (no filtrar)
+# Aplicar filtros: si no hay selección o está vacía, NO filtrar (mostrar todo)
 try:
-    if isinstance(f_suc, (list, tuple, set)) and len(f_suc) > 0:
-        suc_mask = sucursal_for_filter.isin(f_suc)
-    else:
+    # DEBUG: Mostrar estado de filtros en desarrollo
+    # st.sidebar.write(f"DEBUG - f_suc: {len(f_suc) if f_suc else 0} de {len(SUC_ALL)}")
+    # st.sidebar.write(f"DEBUG - f_ases: {len(f_ases) if f_ases else 0} de {len(ASES_ALL)}")
+    # st.sidebar.write(f"DEBUG - f_est: {len(f_est) if f_est else 0} de {len(EST_ALL)}")
+    
+    # Sucursal: si está vacío o tiene todos, no filtrar
+    if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
         suc_mask = pd.Series(True, index=df_cli.index)
-
-    if isinstance(f_ases, (list, tuple, set)) and len(f_ases) > 0:
-        asesor_mask = asesor_for_filter.isin(f_ases)
     else:
+        suc_mask = sucursal_for_filter.isin(f_suc)
+
+    # Asesor: si está vacío o tiene todos, no filtrar
+    if not f_ases or len(f_ases) == 0 or set(f_ases) == set(ASES_ALL):
         asesor_mask = pd.Series(True, index=df_cli.index)
-
-    if isinstance(f_est, (list, tuple, set)) and len(f_est) > 0:
-        est_mask = df_cli["estatus"].isin(f_est)
     else:
-        est_mask = pd.Series(True, index=df_cli.index)
+        asesor_mask = asesor_for_filter.isin(f_ases)
 
-    # NEW: aplicar filtro por fuente
+    # Estatus: si está vacío o tiene todos, no filtrar
+    if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
+        est_mask = pd.Series(True, index=df_cli.index)
+    else:
+        est_mask = df_cli["estatus"].isin(f_est)
+
+    # Fuente: si está vacío o tiene todos, no filtrar
     try:
-        if isinstance(f_fuente, (list, tuple, set)) and len(f_fuente) > 0:
-            fuente_mask = fuente_for_filter.isin(f_fuente)
-        else:
+        if not f_fuente or len(f_fuente) == 0 or set(f_fuente) == set(FUENTE_ALL):
             fuente_mask = pd.Series(True, index=df_cli.index)
+        else:
+            fuente_mask = fuente_for_filter.isin(f_fuente)
     except Exception:
         fuente_mask = pd.Series(True, index=df_cli.index)
 
-except Exception:
+except Exception as e:
     # Fallback seguro: no filtrar si algo falla
+    st.sidebar.error(f"Error en filtros: {e}")
     suc_mask = pd.Series(True, index=df_cli.index)
     asesor_mask = pd.Series(True, index=df_cli.index)
     est_mask = pd.Series(True, index=df_cli.index)
