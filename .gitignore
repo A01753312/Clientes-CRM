@@ -276,3 +276,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Backup files
+backups/
+*.zip
+backup_*.zip
