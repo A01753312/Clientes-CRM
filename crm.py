@@ -15,7 +15,6 @@ import difflib
 import unicodedata
 from datetime import date, datetime
 from pathlib import Path
-from crm_lib.utils import safe_name, sort_df_by_dates, canonicalize_from_catalog, optimize_dataframe_memory
 
 import pandas as pd
 import gspread
@@ -25,54 +24,6 @@ import streamlit as st
 import shutil
 import altair as alt
 from google.auth.transport.requests import Request
-import subprocess
-import time
-import threading
-from crm_lib.core import _norm_key, find_matching_asesor, nuevo_id_cliente
-
-# Opcional: importar módulos seccionados (storage, docs, auth, config)
-try:
-    from crm_lib import storage as crm_storage
-except Exception:
-    crm_storage = None
-try:
-    from crm_lib import docs as crm_docs
-except Exception:
-    crm_docs = None
-try:
-    from crm_lib import auth as crm_auth
-except Exception:
-    crm_auth = None
-try:
-    from crm_lib import config as crm_config
-except Exception:
-    crm_config = None
-
-# Helper para obtener token de GitHub desde env, Streamlit secrets o `gh auth token`
-def _github_token():
-    """
-    Obtiene el token de GitHub desde:
-    1. Variable de entorno (GITHUB_TOKEN o GITHUB_PAT)
-    2. Streamlit Secrets
-    3. 'gh auth token' (si está autenticado en Codespaces o local)
-    """
-    tok = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_PAT')
-    if not tok and hasattr(st, "secrets"):
-        try:
-            tok = st.secrets.get('GITHUB_TOKEN') or st.secrets.get('GITHUB_PAT')
-            if tok:
-                os.environ['GITHUB_TOKEN'] = tok  # para que git lo vea
-        except Exception:
-            tok = tok
-    if not tok:
-        try:
-            gh_tok = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=10)
-            if gh_tok.returncode == 0 and gh_tok.stdout.strip():
-                tok = gh_tok.stdout.strip()
-                os.environ['GITHUB_TOKEN'] = tok
-        except Exception:
-            pass
-    return tok
 
 # Debug info removed by user request (sidebar debug block intentionally deleted)
 
@@ -83,151 +34,6 @@ DOCS_DIR = DATA_DIR / "docs"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CLIENTES_CSV = DATA_DIR / "clientes.csv"
 CLIENTES_XLSX = DATA_DIR / "clientes.xlsx"
-
-# Backups local en el Codespace
-BACKUPS_DIR = Path("backups")
-BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
-
-def create_backup_zip() -> Path:
-    """Crea un ZIP con la carpeta `data/` y retorna el path del ZIP."""
-    try:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base = BACKUPS_DIR / f"backup_{ts}"
-        zip_path = shutil.make_archive(str(base), 'zip', root_dir=str(DATA_DIR))
-        return Path(zip_path)
-    except Exception:
-        return None
-
-def git_auto_commit(backup_zip: Path = None) -> str:
-    """Hace commit y push automático de los datos del CRM y del ZIP de backup opcional.
-    Retorna un mensaje con el resultado.
-    """
-    try:
-        repo_path = Path(__file__).parent
-        paths_to_add = [str(CLIENTES_CSV), str(CLIENTES_XLSX), str(DOCS_DIR)]
-        if backup_zip:
-            paths_to_add.append(str(backup_zip))
-
-        # git add
-        result_add = subprocess.run(['git', 'add', *paths_to_add], cwd=repo_path, capture_output=True, text=True, timeout=30)
-        if result_add.returncode != 0:
-            return f"❌ Error agregando archivos: {result_add.stderr}"
-
-        # Asegurar identidad de autor local en este repo para el subprocess
-        try:
-            subprocess.run(['git', 'config', 'user.email', 'crm-auto-backup@kapitaliza.com'], cwd=repo_path, check=False)
-            subprocess.run(['git', 'config', 'user.name', 'CRM Auto Backup'], cwd=repo_path, check=False)
-        except Exception:
-            pass
-
-        commit_message = f"CRM: Auto-backup {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        result_commit = subprocess.run(['git', 'commit', '-m', commit_message], cwd=repo_path, capture_output=True, text=True, timeout=30)
-
-        if "nothing to commit" in (result_commit.stdout or "") or "nada para hacer commit" in (result_commit.stdout or ""):
-            return "⏭️ Sin cambios para commit"
-
-        if result_commit.returncode != 0:
-            return f"❌ Error en commit: {result_commit.stderr}"
-
-        # Intentar push. Preferir una URL autenticada si tenemos un token.
-        try:
-            token = _github_token()
-
-            # Obtener URL remota
-            rem = subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=repo_path, capture_output=True, text=True)
-            remote_url = (rem.stdout or '').strip()
-
-            # Empujar preferentemente usando una URL autenticada si es HTTPS y tenemos token
-            if token and remote_url.startswith('https://'):
-                safe_token = token
-                auth_url = remote_url.replace('https://', f'https://{safe_token}@', 1)
-                br = subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_path, capture_output=True, text=True)
-                branch = (br.stdout or 'main').strip()
-                result_push = subprocess.run(['git', 'push', auth_url, f'HEAD:refs/heads/{branch}'], cwd=repo_path, capture_output=True, text=True, timeout=60)
-            else:
-                # Sin token disponible, intentar push normal (usará credential helper si está configurado)
-                result_push = subprocess.run(['git', 'push', 'origin', 'HEAD'], cwd=repo_path, capture_output=True, text=True, timeout=60)
-
-            if result_push.returncode == 0:
-                return f"✅ Backup automático: {commit_message}"
-            else:
-                stderr = (result_push.stderr or result_push.stdout or '').strip()
-                # Detección de error clásico de credenciales
-                if 'could not read Username' in stderr or 'Authentication failed' in stderr or 'fatal: could not read Username' in stderr:
-                    return ("⚠️ Commit ok, pero push falló: no hay credenciales para hacer push. "
-                            "Configura 'gh auth login' en este Codespace o proporciona GITHUB_TOKEN en el entorno.")
-                return f"⚠️ Commit ok, pero push falló: {stderr}"
-        except Exception as e:
-            return f"⚠️ Commit ok, pero push falló: {str(e)}"
-    except subprocess.TimeoutExpired:
-        return "❌ Timeout en operación git"
-    except Exception as e:
-        return f"❌ Error general: {str(e)}"
-
-
-def _periodic_backup_loop(interval_seconds: int = 3600):
-    """Loop que crea un ZIP de backup y hace git_auto_commit cada `interval_seconds` segundos."""
-    while True:
-        try:
-            zip_path = create_backup_zip()
-            res = git_auto_commit(zip_path)
-            # actualizar st.session_state si existe
-            try:
-                st.session_state['last_auto_backup'] = time.time()
-            except Exception:
-                pass
-        except Exception:
-            pass
-        time.sleep(interval_seconds)
-
-# Iniciar worker de backups en background (daemon)
-try:
-    _backup_thread = threading.Thread(target=_periodic_backup_loop, args=(3600,), daemon=True)
-    _backup_thread.start()
-except Exception:
-    pass
-
-# Wrappers to delegate to crm_lib modules when available (keeps backward compatibility)
-def _wrap_cargar_clientes():
-    if crm_storage is not None and hasattr(crm_storage, 'cargar_clientes_local'):
-        return crm_storage.cargar_clientes_local()
-    return None
-
-def _wrap_guardar_clientes(df):
-    if crm_storage is not None and hasattr(crm_storage, 'guardar_clientes_local'):
-        return crm_storage.guardar_clientes_local(df)
-    return None
-
-def _wrap_cargar_historial():
-    if crm_storage is not None and hasattr(crm_storage, 'cargar_historial_local'):
-        return crm_storage.cargar_historial_local()
-    return None
-
-def _wrap_guardar_historial(dfh):
-    if crm_storage is not None and hasattr(crm_storage, 'guardar_historial_local'):
-        return crm_storage.guardar_historial_local(dfh)
-    return None
-
-def _wrap_subir_docs(cid, files, prefijo=""):
-    if crm_docs is not None and hasattr(crm_docs, 'subir_docs'):
-        return crm_docs.subir_docs(cid, files, prefijo=prefijo)
-    return []
-
-def _wrap_listar_docs_cliente(cid):
-    if crm_docs is not None and hasattr(crm_docs, 'listar_docs_cliente'):
-        return crm_docs.listar_docs_cliente(cid)
-    return []
-
-def _wrap_add_user(username, password, role='member'):
-    if crm_auth is not None and hasattr(crm_auth, 'add_user_local'):
-        return crm_auth.add_user_local(username, password, role=role)
-    return (False, 'No disponible')
-
-def _wrap_delete_user(username):
-    if crm_auth is not None and hasattr(crm_auth, 'delete_user_local'):
-        return crm_auth.delete_user_local(username)
-    return (False, 'No disponible')
-
 
 # === CONFIGURACIÓN GOOGLE SHEETS ===
 USE_GSHEETS = True   # pon False si quieres trabajar sólo local
@@ -294,179 +100,39 @@ def _gs_credentials():
         st.error(f"❌ Error en autenticación Google Sheets: {str(e)}")
         return None
 
-import difflib
-import re
-import time
-from datetime import datetime
-
-# --- 1) Parámetros de reintento para Google Sheets ---
-GS_RETRIES = 4           # Intentos de apertura de pestaña
-GS_RETRY_SLEEP = 0.8     # Segundos entre intentos
-
-# Cache de worksheets
-if "_GS_WS_CACHE" not in globals():
-    _GS_WS_CACHE = {}
-
-# --- 2) Apertura de pestañas de Sheets con reintentos ---
 def _gs_open_worksheet(tab_name: str):
-    """
-    Abre una pestaña del Google Sheet con reintentos y cache.
-    Devuelve el objeto worksheet o None si no fue posible abrir.
-    """
-    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
-        return None
+    """Versión silenciosa: Abre una pestaña, pero no muestra mensajes en la UI después del primer render.
+    Devuelve None en caso de cualquier problema (silencioso)."""
+    global _GS_GC, _GS_SH, _GS_WS_CACHE
     try:
-        # Intentar inicializar cliente de gspread y abrir el spreadsheet si aún no se hizo
-        try:
-            if (_GS_SH is None) and (_GS_GC is None):
-                # lazy init; si falla, _gs_init dejará los globals en None
-                def _gs_init():
-                    """Inicializa _GS_GC y _GS_SH usando las credenciales disponibles.
-                    Retorna True si tuvo éxito, False en caso contrario.
-                    """
-                    global _GS_GC, _GS_SH
-                    try:
-                        creds = _gs_credentials()
-                        if not creds:
-                            return False
-                        # gspread acepta Credentials objects via authorize or Client
-                        try:
-                            _GS_GC = gspread.authorize(creds)
-                        except Exception:
-                            try:
-                                _GS_GC = gspread.Client(auth=creds)
-                            except Exception:
-                                _GS_GC = None
+        if tab_name in _GS_WS_CACHE:
+            return _GS_WS_CACHE[tab_name]
 
-                        if _GS_GC is None:
-                            return False
-
-                        # Abrir el spreadsheet por ID
-                        try:
-                            # Preferir open_by_key (más estable que open)
-                            _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
-                        except Exception:
-                            try:
-                                _GS_SH = _GS_GC.open(GSHEET_ID)
-                            except Exception:
-                                _GS_SH = None
-                        return _GS_SH is not None
-                    except Exception:
-                        return False
-
-                _gs_init()
-        except Exception:
-            # no bloquear: si la inicialización falla, más abajo retornaremos None
-            pass
-        ws_cached = _GS_WS_CACHE.get(tab_name)
-        if ws_cached is not None:
-            return ws_cached
-        # _GS_SH debe ser un gspread.Spreadsheet ya inicializado en tu app
-        # Si no logramos inicializar _GS_SH, salir pronto
-        if _GS_SH is None:
+        creds = _gs_credentials()
+        if creds is None:
             return None
 
-        last_exc = None
-        for _ in range(GS_RETRIES):
+        if _GS_GC is None:
+            _GS_GC = gspread.authorize(creds)
+        
+        if _GS_SH is None:
             try:
-                ws = _GS_SH.worksheet(tab_name)
-                _GS_WS_CACHE[tab_name] = ws
-                return ws
-            except Exception as e:
-                last_exc = e
-                # pequeño delay entre reintentos
-                time.sleep(GS_RETRY_SLEEP)
-
-        # Si llegamos aquí no pudimos abrir la pestaña. Intentar listar pestañas
-        # disponibles para diagnosticar (imprime en consola, no rompe la app).
-        try:
-            try:
-                sheets = _GS_SH.worksheets()
-                titles = [s.title for s in sheets]
+                _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
+                # silencioso: no mostrar mensajes en UI
             except Exception:
-                titles = None
-            print(f"⚠️ _gs_open_worksheet: no se pudo abrir pestaña '{tab_name}'. Última excepción: {repr(last_exc)}. Tabs disponibles: {titles}")
-        except Exception:
-            pass
-        return None
+                return None
+
+        try:
+            ws = _GS_SH.worksheet(tab_name)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = _GS_SH.add_worksheet(title=tab_name, rows="5000", cols="50")
+            # silencioso: no mostrar información al usuario
+
+        _GS_WS_CACHE[tab_name] = ws
+        return ws
+        
     except Exception:
         return None
-
-def _gs_optimized_connection():
-    """Devuelve el Spreadsheet activo, reusando si sigue válido."""
-    global _GS_SH, _GS_WS_CACHE
-    if _GS_SH is not None:
-        try:
-            _ = _GS_SH.title   # toque ligero (más barato que worksheets())
-            return _GS_SH
-        except Exception:
-            _GS_SH = None
-            _GS_WS_CACHE.clear()
-    # Forzar init abriendo una worksheet conocida (dispara _gs_init si hace falta)
-    _ = _gs_open_worksheet(GSHEET_TAB)  # usa tu tab principal de clientes
-    return _GS_SH
-
-# --- 3) Cargar y guardar usuarios en Sheets (silencioso y robusto) ---
-def cargar_usuarios_gsheet() -> dict:
-    """Carga usuarios desde Google Sheets -> {"users": [...]} o vacío si falla."""
-    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
-        return {"users": []}
-    try:
-        ws = _gs_open_worksheet(GSHEET_USERSTAB)
-        if ws is None:
-            return {"users": []}
-        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
-        if df is None or df.empty:
-            return {"users": []}
-        users = []
-        for _, row in df.iterrows():
-            u = {
-                "user": row.get("user", ""),
-                "role": row.get("role", "member"),
-                "salt": row.get("salt", ""),
-                "hash": row.get("hash", "")
-            }
-            if u["user"] and u["salt"] and u["hash"]:
-                users.append(u)
-        return {"users": users}
-    except Exception:
-        return {"users": []}
-
-
-def guardar_usuarios_gsheet(users_data: dict):
-    """Guarda usuarios en Google Sheets; si falla, no rompe la app."""
-    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
-        return
-    try:
-        ws = _gs_open_worksheet(GSHEET_USERSTAB)
-        if ws is None:
-            return
-        users_list = users_data.get("users", [])
-        if not users_list:
-            try:
-                ws.clear()
-            except Exception:
-                pass
-            return
-        df = pd.DataFrame(users_list)
-        for col in ("user", "role", "salt", "hash"):
-            if col not in df.columns:
-                df[col] = ""
-        df = df[["user", "role", "salt", "hash"]]
-        set_with_dataframe(ws, df, include_index=False, include_column_header=True, resize=True)
-    except Exception:
-        pass
-
-# --- 4) (Opcional) Arranque estricto: asegurar que existan pestañas antes de operar ---
-def _require_gsheets_tabs(tabs=("clientes","historial","users")):
-    if not 'USE_GSHEETS' in globals() or not USE_GSHEETS:
-        return True
-    ok = True
-    for t in tabs:
-        if _gs_open_worksheet(t) is None:
-            ok = False
-            break
-    return ok
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
@@ -589,10 +255,42 @@ def sort_df_by_dates(df: pd.DataFrame) -> pd.DataFrame:
         return df.sort_values(date_cols, ascending=True, na_position="last").reset_index(drop=True)
     return df
 
-# Helpers provistos por crm_lib.utils:
-# - safe_name
-# - sort_df_by_dates
-# - canonicalize_from_catalog
+def safe_name(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip()
+    s = SAFE_NAME_RE.sub("_", s)
+    s = re.sub(r"\s+", " ", s)
+    return s[:150]
+
+# NEW: normalización y búsqueda de asesor existente
+def _norm_key(s: str) -> str:
+    s = (s or "")
+    s = str(s).strip()
+    s = re.sub(r"\s+", " ", s)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    # usar casefold() en lugar de lower() para una comparación Unicode más robusta
+    return s.casefold()
+
+def find_matching_asesor(name: str, df: pd.DataFrame) -> str:
+    """
+    Si name coincide (normalizado) con algún 'asesor' ya presente en df -> retorna la forma registrada.
+    Si no hay coincidencia, retorna name limpio con capitalización de palabras (o '' si vacío).
+    """
+    name = (name or "").strip()
+    if not name:
+        return ""
+    name_key = _norm_key(name)
+    # buscar en el dataframe por la clave normalizada
+    for a in df["asesor"].fillna("").unique():
+        if not str(a).strip():
+            continue
+        if _norm_key(a) == name_key:
+            return a  # usar la forma ya existente
+    # si no existe, devolver una versión "limpia" con Title Case (mínima transformación)
+    return " ".join(w.capitalize() for w in name.split())
+
 
 # ----- Document helpers para manejo de archivos de clientes -----
 def carpeta_docs_cliente(cid: str) -> Path:
@@ -629,7 +327,51 @@ def carpeta_docs_cliente(cid: str) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
-# canonicalize_from_catalog provisto por crm_lib.utils
+def canonicalize_from_catalog(
+    raw: str,
+    catalog: list[str],
+    extra_synonyms: dict[str, str] | None = None,
+    min_ratio: float = 0.90
+) -> str:
+    """
+    Devuelve el valor 'raw' mapeado al elemento 'canónico' del catálogo más similar:
+    - Igualdad exacta tras normalizar (ignora acentos/case/espacios)
+    - Sinónimos explícitos (opcional)
+    - 'Fuzzy' por similitud (difflib) con umbral min_ratio
+    Si no encuentra nada suficientemente parecido → devuelve 'raw' tal cual.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return s
+
+    key = _norm_key(s)
+
+    # 1) match exacto normalizado
+    for opt in catalog:
+        if _norm_key(opt) == key:
+            return opt
+
+    # 2) sinónimos opcionales (mapa: "en revision" -> "EN REVISIÓN")
+    if extra_synonyms:
+        for k, v in extra_synonyms.items():
+            if _norm_key(k) == key:
+                # devolver el canónico si existe en catálogo; si no, el sinónimo
+                for opt in catalog:
+                    if _norm_key(opt) == _norm_key(v):
+                        return opt
+                return v
+
+    # 3) fuzzy: el más parecido por ratio
+    best, best_r = None, 0.0
+    for opt in catalog:
+        r = difflib.SequenceMatcher(None, key, _norm_key(opt)).ratio()
+        if r > best_r:
+            best_r, best = r, opt
+
+    if best and best_r >= min_ratio:
+        return best
+
+    return s
 
 
 def subir_docs(cid: str, files, prefijo: str = "") -> list:
@@ -639,13 +381,6 @@ def subir_docs(cid: str, files, prefijo: str = "") -> list:
     `prefijo` se antepone al nombre del archivo en disco.
     NO escribe en historial; retorna la lista de nombres guardados.
     """
-    # If a separated docs module is available, delegate to it for clarity
-    if crm_docs is not None and hasattr(crm_docs, 'subir_docs'):
-        try:
-            return crm_docs.subir_docs(cid, files, prefijo=prefijo)
-        except Exception:
-            pass
-
     if not cid:
         return []
     folder = carpeta_docs_cliente(cid)
@@ -728,13 +463,6 @@ def listar_docs_cliente(cid: str):
     Lista los archivos asociados a un cliente (Path objects), ordenados por nombre.
     Retorna lista vacía si no existe carpeta.
     """
-    # If a separated docs module is available, delegate to it
-    if crm_docs is not None and hasattr(crm_docs, 'listar_docs_cliente'):
-        try:
-            return crm_docs.listar_docs_cliente(cid)
-        except Exception:
-            pass
-
     try:
         nombre = get_nombre_by_id(cid) or ""
     except Exception:
@@ -756,7 +484,32 @@ def listar_docs_cliente(cid: str):
     return []
 
 
-# nuevo_id_cliente provisto por crm_lib.core
+def nuevo_id_cliente(df: pd.DataFrame) -> str:
+    """
+    Genera un nuevo ID de cliente único con prefijo 'C' basado en los IDs existentes del DataFrame.
+    Si no encuentra IDs del formato C<number>, comienza en C1000.
+    """
+    base_id = 1000
+    try:
+        if df is not None and not df.empty and "id" in df.columns:
+            nums = []
+            for x in df["id"].astype(str):
+                if not x:
+                    continue
+                m = re.match(r"^C(\d+)$", str(x).strip())
+                if m:
+                    try:
+                        nums.append(int(m.group(1)))
+                    except Exception:
+                        continue
+            if nums:
+                base_id = max(nums) + 1
+            else:
+                # fallback: avoid collision con filas existentes
+                base_id = base_id + len(df)
+    except Exception:
+        base_id = base_id
+    return f"C{base_id}"
 
 def get_nombre_by_id(cid: str) -> str:
     """Retorna el nombre del cliente por id de forma segura ('' si no existe)."""
@@ -1090,8 +843,6 @@ def selectbox_multi(label: str, options: list[str], state_key: str) -> list[str]
 
     return st.session_state[state_key]
 
-# optimize_dataframe_memory provisto por crm_lib.utils
-
 # ---------- Sidebar (filtros + acciones) ----------
 # Columnas esperadas en el CSV / DataFrame de clientes
 COLUMNS = [
@@ -1099,39 +850,6 @@ COLUMNS = [
     "estatus","monto_propuesta","monto_final","segundo_estatus","observaciones",
     "score","telefono","correo","analista","fuente"
 ]
-
-# --- Cache versión para invalidar lecturas de clientes ---
-st.session_state.setdefault("cli_cache_ver", 0)
-
-# Cache simple en session_state para evitar problemas con replay de mensajes
-# cuando `cargar_clientes()` emite llamadas a `st.*` (st.toast/st.success).
-def _cargar_clientes_cacheada(version: int = 0) -> pd.DataFrame:
-    key = f"_cached_clientes_v{int(version)}"
-    cached = st.session_state.get(key)
-    if cached is not None and isinstance(cached, pd.DataFrame):
-        return cached
-    try:
-        # Prefer local storage module if available
-        df = None
-        try:
-            df = _wrap_cargar_clientes()
-        except Exception:
-            df = None
-        if df is None:
-            df = cargar_clientes()
-        if df is None:
-            df = pd.DataFrame(columns=COLUMNS)
-        # Guardar copia en session_state (no se cachean mensajes de st)
-        try:
-            st.session_state[key] = df.copy()
-        except Exception:
-            # En caso de que el DataFrame no sea serializable, dejar sin cache
-            pass
-        return df
-    except Exception:
-        return pd.DataFrame(columns=COLUMNS)
-
-# optimize_dataframe_memory provisto por crm_lib.utils
 
 def cargar_clientes() -> pd.DataFrame:
     """
@@ -1274,6 +992,7 @@ def guardar_clientes(df: pd.DataFrame):
             if df_actual.empty:
                 # Aseguramos encabezado y luego agregamos los datos
                 try:
+                    # actualizar encabezado (por si no existía)
                     ws.update("A1", [COLUMNS])
                 except Exception:
                     pass
@@ -1288,6 +1007,7 @@ def guardar_clientes(df: pd.DataFrame):
                         except Exception:
                             pass
                 return
+                return
 
             df_actual = _ensure_columns(df_actual, COLUMNS)
 
@@ -1301,15 +1021,7 @@ def guardar_clientes(df: pd.DataFrame):
             # 1) Agrega los nuevos
             if nuevos_ids:
                 rows_to_append = df_nuevo.loc[df_nuevo["id"].astype(str).isin(nuevos_ids), COLUMNS].values.tolist()
-                try:
-                    ws.append_rows(rows_to_append, value_input_option="RAW")
-                except Exception:
-                    # fallback a set_with_dataframe si append falla
-                    try:
-                        set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
-                        return
-                    except Exception:
-                        pass
+                ws.append_rows(rows_to_append, value_input_option="RAW")
 
             # 2) Actualiza los existentes (si cambian)
             updates = []
@@ -1336,24 +1048,10 @@ def guardar_clientes(df: pd.DataFrame):
                 try:
                     ws.batch_update([{"range": u["range"], "values": u["values"]} for u in updates], value_input_option="RAW")
                 except Exception as e:
-                    # Registrar el error y hacer fallback escribiendo todo el DataFrame
                     try:
                         print(f"⚠️ Error en batch_update de clientes en GSheets: {e}")
                     except Exception:
                         pass
-                    try:
-                        set_with_dataframe(ws, df_nuevo[COLUMNS], include_index=False, include_column_header=True, resize=True)
-                        try:
-                            print("✅ Fallback: se sobrescribió la pestaña 'clientes' en Google Sheets con set_with_dataframe.")
-                        except Exception:
-                            pass
-                        return
-                    except Exception as e2:
-                        try:
-                            print(f"❌ Fallback falló al escribir clientes en GSheets: {e2}")
-                        except Exception:
-                            pass
-            return
 
         HIST_COLUMNS_DEFAULT = ["fecha","accion","id","nombre","detalle","usuario"]
 
@@ -1388,8 +1086,7 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
-
+df_cli = cargar_clientes()
 
 # Corregir IDs vacíos o duplicados inmediatamente al cargar
 def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
@@ -1447,8 +1144,6 @@ try:
     if changed:
         df_cli = df_fixed
         guardar_clientes(df_cli)
-        st.session_state["cli_cache_ver"] += 1
-
     else:
         df_cli = df_fixed
 except Exception:
@@ -1463,13 +1158,6 @@ def cargar_historial() -> pd.DataFrame:
     """
     # añadimos 'action' y 'actor' para saber quién hizo el cambio y qué tipo fue
     cols = ["id", "nombre", "estatus_old", "estatus_new", "segundo_old", "segundo_new", "observaciones", "action", "actor", "ts"]
-    # Prefer storage module if available
-    try:
-        dfh = _wrap_cargar_historial()
-        if dfh is not None:
-            return dfh
-    except Exception:
-        pass
     try:
         if HISTORIAL_CSV.exists():
             dfh = pd.read_csv(HISTORIAL_CSV, dtype=str).fillna("")
@@ -2145,8 +1833,7 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-df_cli = _cargar_clientes_cacheada(st.session_state.get("cli_cache_ver", 0))
-df_cli = optimize_dataframe_memory(df_cli)
+df_cli = cargar_clientes()
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
@@ -2243,39 +1930,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Resumen filtrado")
 st.sidebar.metric("Clientes visibles", len(df_ver))
 st.sidebar.metric("Total en base", len(df_cli))
-
-# --- Backup manual en sidebar ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔄 Backup Automático")
-last_backup = st.session_state.get('last_auto_backup', 0)
-if last_backup:
-    try:
-        last_time = datetime.fromtimestamp(last_backup)
-        st.sidebar.caption(f"Último backup: {last_time.strftime('%Y-%m-%d %H:%M')}")
-    except Exception:
-        st.sidebar.caption("Último backup: —")
-else:
-    st.sidebar.caption("Backup: Nunca")
-
-if st.sidebar.button("💾 Backup Manual Ahora"):
-    with st.sidebar:
-        with st.spinner("Haciendo backup..."):
-            # Crear ZIP y ejecutar commit/push
-            try:
-                zip_path = create_backup_zip()
-            except Exception:
-                zip_path = None
-            result = git_auto_commit(zip_path)
-            if "✅" in result:
-                st.success("Backup exitoso")
-                try:
-                    st.session_state['last_auto_backup'] = time.time()
-                except Exception:
-                    pass
-            elif "⏭️" in result:
-                st.info("Sin cambios para backup")
-            else:
-                st.error(f"Error: {result}")
 
 # Añadir botón para descargar Excel del resumen filtrado (df_ver)
 try:
@@ -2612,7 +2266,6 @@ with tab_cli:
                         }
                         base = pd.concat([df_cli, pd.DataFrame([nuevo])], ignore_index=True)
                         guardar_clientes(base)
-                        st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                         # registrar creación en historial
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         append_historial(cid, nuevo.get("nombre", ""), "", nuevo.get("estatus", ""), "", nuevo.get("segundo_estatus", ""), f"Creado por {actor}", action="CLIENTE AGREGADO", actor=actor)
@@ -2634,18 +2287,6 @@ with tab_cli:
                                 f"Subidos: {', '.join(subidos_lote)}",
                                 action="DOCUMENTOS", actor=actor
                             )
-
-                            # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
-                            try:
-                                zip_path = create_backup_zip()
-                                msg = git_auto_commit(zip_path)
-                                try:
-                                    st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
-                                except Exception:
-                                    pass
-                            except Exception:
-                                # No bloquear el flujo principal si el backup falla
-                                pass
 
                         st.success(f"Cliente {cid} creado ✅")
                         do_rerun()  # NEW: refresca todo
@@ -2722,8 +2363,6 @@ with tab_cli:
                     base.at[cid_quick, "segundo_estatus"] = nuevo_seg
                     df_cli = base.reset_index()
                     guardar_clientes(df_cli)
-                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
-
                     # registrar en historial quién hizo el cambio (modificar)
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_quick, nombre_q, estatus_actual, nuevo_estatus, seg_actual, nuevo_seg, obs_q, action="ESTATUS MODIFICADO", actor=actor)
@@ -2774,7 +2413,6 @@ with tab_cli:
                     pass
 
                 guardar_clientes(df_cli)
-                st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                 st.success("Cambios guardados ✅")
                 # Forzar reconstrucción de filtros de asesores en el sidebar
                 try:
@@ -2809,8 +2447,6 @@ with tab_cli:
                         actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                         append_historial(cid_del, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                         df_cli = eliminar_cliente(cid_del, df_cli, borrar_historial=False)
-                        guardar_clientes(df_cli)  # <-- persistir cambios
-                        st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                         st.success(f"Cliente {cid_del} eliminado ✅")
                         do_rerun()
             else:
@@ -2824,7 +2460,6 @@ with tab_asesores:
     # Esto asegura que la pestaña de Asesores siempre refleje asesores recién agregados.
     try:
         _df_all = cargar_clientes()
-        _df_all = optimize_dataframe_memory(_df_all)
         # Preparar masks usando los mismos keys/valores del sidebar
         SUC_LABEL_EMPTY = "(Sin sucursal)"
         suc_for_all = _df_all["sucursal"].replace({"": SUC_LABEL_EMPTY})
@@ -3136,17 +2771,6 @@ with tab_docs:
                             action="DOCUMENTOS", actor=actor
                         )
 
-                        # Crear backup automático al subir documentos (guardar ZIP local y tratar de push)
-                        try:
-                            zip_path = create_backup_zip()
-                            msg = git_auto_commit(zip_path)
-                            try:
-                                st.success(f"Backup realizado: {msg} ({datetime.now().strftime('%H:%M:%S')})")
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-
                         # refresco inmediato (token)
                         tok_key = f"docs_token_{cid_sel}"
                         st.session_state[tok_key] = st.session_state.get(tok_key, 0) + 1
@@ -3275,8 +2899,6 @@ with tab_docs:
                     actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
                     append_historial(cid_sel, nombre_del, "", "", "", "", f"Eliminado por {actor}", action="CLIENTE ELIMINADO", actor=actor)
                     df_cli = eliminar_cliente(cid_sel, df_cli, borrar_historial=False)
-                    guardar_clientes(df_cli)
-                    st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
                     st.success(f"Cliente {cid_sel} eliminado ✅")
                     do_rerun()
             else:
@@ -3500,7 +3122,6 @@ with tab_import:
             except Exception:
                 pass
             guardar_clientes(base)
-            st.session_state["cli_cache_ver"] = st.session_state.get("cli_cache_ver", 0) + 1
             st.success(f"Importación completada ✅  |  Agregados: {agregados}  ·  Actualizados: {actualizados}")
 
             # Limpieza del estado del mapeo para que no “se quede” la UI
@@ -3610,5 +3231,6 @@ with tab_hist:
                     do_rerun()
                 except Exception as e:
                     st.error(f"Error al borrar historial: {e}")
+
 
 
