@@ -134,6 +134,18 @@ def _gs_open_worksheet(tab_name: str):
     except Exception:
         return None
 
+def limpiar_cache_gsheets():
+    """Limpia todos los cachés de Google Sheets para forzar recarga de datos."""
+    global _GS_GC, _GS_SH, _GS_WS_CACHE
+    _GS_WS_CACHE.clear()
+    _GS_GC = None
+    _GS_SH = None
+    # También limpiar caché de Streamlit
+    st.cache_data.clear()
+    # Limpiar flags de session_state relacionados con la carga
+    if 'gs_load_msg_shown' in st.session_state:
+        del st.session_state['gs_load_msg_shown']
+
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
     candidates = [DATA_DIR / "logo.png", DATA_DIR / "logo.jpg", DATA_DIR / "logo.jpeg"]
@@ -1832,6 +1844,14 @@ if is_admin():
 # ---------- Sidebar (filtros + acciones) ----------
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
+
+# Botón para recargar datos desde Google Sheets
+# IMPORTANTE: Usar este botón cuando los datos de Google Sheets no aparezcan en la app
+if st.sidebar.button("🔄 Recargar datos", help="Fuerza la recarga de datos desde Google Sheets"):
+    with st.spinner("Recargando datos desde Google Sheets..."):
+        limpiar_cache_gsheets()
+    st.success("✅ Datos recargados desde Google Sheets")
+    do_rerun()
 
 df_cli = cargar_clientes()
 
