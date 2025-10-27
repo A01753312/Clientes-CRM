@@ -2036,173 +2036,440 @@ tab_dash, tab_cli, tab_docs, tab_import, tab_hist, tab_asesores = st.tabs(
 
 # ===== Dashboard =====
 with tab_dash:
-    st.subheader("Resumen por estatus")
     # Cargar datos frescos para el dashboard
     df_cli = cargar_y_corregir_clientes()
+    
     if df_cli.empty:
         st.info("Sin clientes aún.")
     else:
-        # Contar estatus reales del dataframe (tratar vacíos como "(Sin estatus)")
-        s = df_cli["estatus"].fillna("").replace({"": "(Sin estatus)"})
-
-        # Asegurar que todos los estatus conocidos aparezcan (incluso con conteo 0)
-        all_status = list(ESTATUS_OPCIONES) + ["(Sin estatus)"]
-        vc = s.value_counts().reindex(all_status, fill_value=0).reset_index()
-        vc.columns = ["estatus", "conteo"]
-
-        # Mostrar métricas para todos los estatus (en filas de hasta 4 columnas)
-        per_row = 4
-        rows = [vc.iloc[i:i+per_row] for i in range(0, len(vc), per_row)]
-        for r in rows:
-            cols = st.columns(len(r))
-            for i, row in enumerate(r.itertuples(index=False)):
-                with cols[i]:
-                    st.metric(str(row.estatus), int(row.conteo))
-
-        # Gráfico: incluir siempre el mismo orden y colores por estatus
-        order_list = all_status
-        maxv = int(vc["conteo"].max() if not vc.empty else 0)
-        base_chart = (
-            alt.Chart(vc)
-            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-            .encode(
-                x=alt.X("estatus:N", sort=order_list, axis=alt.Axis(labelAngle=-40, labelFontSize=11)),
-                y=alt.Y("conteo:Q", axis=alt.Axis(format="d", title="Cantidad"), scale=alt.Scale(domain=[0, maxv * 1.1 if maxv>0 else 1])),
-                color=alt.Color("estatus:N", legend=None)
+        # 🎯 KPIs PRINCIPALES EN LA PARTE SUPERIOR
+        st.subheader("📊 KPIs Principales")
+        
+        # Preparar datos para KPIs
+        total_clientes = len(df_cli)
+        estatus_counts = df_cli["estatus"].fillna("").value_counts()
+        
+        # Calcular KPIs principales
+        dispersados = estatus_counts.get("DISPERSADO", 0)
+        en_proceso = sum([
+            estatus_counts.get("EN ONBOARDING", 0),
+            estatus_counts.get("PENDIENTE CLIENTE", 0),
+            estatus_counts.get("PROPUESTA", 0),
+            estatus_counts.get("PENDIENTE DOC", 0)
+        ])
+        rechazados = sum([
+            estatus_counts.get("REC SOBREENDEUDAMIENTO", 0),
+            estatus_counts.get("REC NO CUMPLE POLITICAS", 0),
+            estatus_counts.get("REC EDAD", 0)
+        ])
+        
+        # Mostrar KPIs en columnas
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        
+        with kpi1:
+            st.metric(
+                label="👥 Total de Clientes",
+                value=total_clientes,
+                help="Número total de clientes en la base de datos"
             )
-        )
-        labels = base_chart.mark_text(dy=-8, color="black", fontSize=11).encode(text=alt.Text("conteo:Q", format="d"))
-        tooltip = base_chart.encode(tooltip=["estatus:N", alt.Tooltip("conteo:Q", format="d")])
-        st.altair_chart((tooltip + labels).properties(height=320), use_container_width=True)
-
-    
-
-        # --- Resumen por estatus filtrado por rango de fechas ---
+        
+        with kpi2:
+            tasa_exito = (dispersados / total_clientes * 100) if total_clientes > 0 else 0
+            st.metric(
+                label="✅ Dispersados (Éxito)",
+                value=dispersados,
+                delta=f"{tasa_exito:.1f}% del total",
+                help="Clientes que han completado exitosamente el proceso"
+            )
+        
+        with kpi3:
+            tasa_proceso = (en_proceso / total_clientes * 100) if total_clientes > 0 else 0
+            st.metric(
+                label="⏳ En Proceso",
+                value=en_proceso,
+                delta=f"{tasa_proceso:.1f}% del total",
+                help="Clientes en onboarding, pendientes o en evaluación"
+            )
+        
+        with kpi4:
+            tasa_rechazo = (rechazados / total_clientes * 100) if total_clientes > 0 else 0
+            st.metric(
+                label="❌ Rechazados",
+                value=rechazados,
+                delta=f"{tasa_rechazo:.1f}% del total",
+                help="Clientes rechazados por diversos motivos"
+            )
+        
         st.markdown("---")
-        st.subheader("Resumen por estatus (rango de fechas)")
-        try:
-            dfr = df_cli.copy()
-            # elegir columna de fecha por defecto: fecha_ingreso > fecha_dispersion
+        
+        # 🔄 TABS SECUNDARIAS PARA ANÁLISIS DETALLADO
+        dash_tab1, dash_tab2, dash_tab3 = st.tabs([
+            "📊 Por Estatus", 
+            "📅 Por Fecha", 
+            "🏢 Por Sucursal/Asesor"
+        ])
+        
+        # 📊 TAB 1: POR ESTATUS
+        with dash_tab1:
+            st.subheader("Análisis por Estatus")
+            
+            # Solo mostrar estatus con valores > 0 (más limpio)
+            estatus_data = df_cli["estatus"].fillna("(Sin estatus)").value_counts()
+            estatus_data = estatus_data[estatus_data > 0]  # Filtrar solo valores > 0
+            
+            if estatus_data.empty:
+                st.info("No hay datos de estatus para mostrar.")
+            else:
+                # Convertir a DataFrame y agregar porcentajes
+                estatus_df = estatus_data.reset_index()
+                estatus_df.columns = ["estatus", "cantidad"]
+                estatus_df["porcentaje"] = (estatus_df["cantidad"] / total_clientes * 100).round(1)
+                
+                # Ordenar por cantidad (descendente)
+                estatus_df = estatus_df.sort_values("cantidad", ascending=False)
+                
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    # Métricas con porcentajes del total
+                    st.markdown("**Distribución detallada:**")
+                    for _, row in estatus_df.iterrows():
+                        st.metric(
+                            label=row["estatus"],
+                            value=f"{int(row['cantidad'])} ({row['porcentaje']}%)"
+                        )
+                
+                with col2:
+                    # Gráfico horizontal (más fácil de leer)
+                    chart = alt.Chart(estatus_df).mark_bar(
+                        cornerRadiusTopRight=4,
+                        cornerRadiusBottomRight=4
+                    ).encode(
+                        x=alt.X("cantidad:Q", 
+                               axis=alt.Axis(title="Cantidad de Clientes"),
+                               scale=alt.Scale(domain=[0, estatus_df["cantidad"].max() * 1.1])),
+                        y=alt.Y("estatus:N", 
+                               sort="-x", 
+                               axis=alt.Axis(title="Estatus")),
+                        color=alt.Color("estatus:N", 
+                                       scale=alt.Scale(scheme="category20"),
+                                       legend=None),
+                        tooltip=[
+                            alt.Tooltip("estatus:N", title="Estatus"),
+                            alt.Tooltip("cantidad:Q", title="Cantidad"),
+                            alt.Tooltip("porcentaje:Q", title="Porcentaje (%)", format=".1f")
+                        ]
+                    ).properties(
+                        height=max(300, len(estatus_df) * 40),
+                        title="Distribución de Clientes por Estatus"
+                    )
+                    
+                    # Agregar etiquetas con valores
+                    text = alt.Chart(estatus_df).mark_text(
+                        align="left",
+                        baseline="middle",
+                        dx=5,
+                        fontSize=11,
+                        fontWeight="bold"
+                    ).encode(
+                        x=alt.X("cantidad:Q"),
+                        y=alt.Y("estatus:N", sort="-x"),
+                        text=alt.Text("cantidad:Q", format="d"),
+                        color=alt.value("black")
+                    )
+                    
+                    st.altair_chart(chart + text, use_container_width=True)
+        
+        # 📅 TAB 2: POR FECHA
+        with dash_tab2:
+            st.subheader("Análisis Temporal")
+            
+            # Selector de período predefinido
+            periodo_options = {
+                "Último mes": 30,
+                "Últimos 3 meses": 90,
+                "Últimos 6 meses": 180,
+                "Último año": 365,
+                "Todo el histórico": None,
+                "Personalizado": "custom"
+            }
+            
+            col_periodo, col_custom = st.columns([1, 2])
+            
+            with col_periodo:
+                periodo_seleccionado = st.selectbox(
+                    "Seleccionar período:",
+                    list(periodo_options.keys()),
+                    index=0
+                )
+            
+            # Determinar fechas según selección
             date_col = None
             for c in ("fecha_ingreso", "fecha_dispersion"):
-                if c in dfr.columns:
+                if c in df_cli.columns:
                     date_col = c
                     break
-
+            
             if date_col is None:
-                st.info("No hay columnas de fecha (fecha_ingreso/fecha_dispersion) para filtrar.")
+                st.warning("No se encontraron columnas de fecha válidas.")
             else:
-                dfr[date_col] = pd.to_datetime(dfr[date_col], errors="coerce")
-                min_date = dfr[date_col].min()
-                max_date = dfr[date_col].max()
-                if pd.isna(min_date) or pd.isna(max_date):
-                    st.info("No hay valores de fecha válidos en la base.")
+                df_temp = df_cli.copy()
+                df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors="coerce")
+                df_temp = df_temp.dropna(subset=[date_col])
+                
+                if df_temp.empty:
+                    st.warning("No hay datos con fechas válidas.")
                 else:
-                    # rango por defecto: todo el histórico
-                    default_start = min_date.date()
-                    default_end = max_date.date()
-                    dr = st.date_input("Mostrar desde → hasta", value=(default_start, default_end))
-                    start_date, end_date = dr if isinstance(dr, tuple) else (dr, dr)
-
-                    mask = (dfr[date_col].dt.date >= start_date) & (dfr[date_col].dt.date <= end_date)
-                    dfr_f = dfr.loc[mask].copy()
-                    if dfr_f.empty:
-                        st.info("No hay registros en el rango seleccionado.")
-                    else:
-                        s = dfr_f["estatus"].fillna("").replace({"": "(Sin estatus)"})
-                        vc_r = s.value_counts().reindex(all_status, fill_value=0).reset_index()
-                        vc_r.columns = ["estatus", "conteo"]
-
-                        # mostrar métricas en filas
-                        per_row = 4
-                        rows = [vc_r.iloc[i:i+per_row] for i in range(0, len(vc_r), per_row)]
-                        for r in rows:
-                            cols = st.columns(len(r))
-                            for i, row in enumerate(r.itertuples(index=False)):
-                                with cols[i]:
-                                    st.metric(str(row.estatus), int(row.conteo))
-
-                        # gráfico igual al principal
-                        order_list = all_status
-                        maxv = int(vc_r["conteo"].max() if not vc_r.empty else 0)
-                        base_chart_r = (
-                            alt.Chart(vc_r)
-                            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-                            .encode(
-                                x=alt.X("estatus:N", sort=order_list, axis=alt.Axis(labelAngle=-40, labelFontSize=11)),
-                                y=alt.Y("conteo:Q", axis=alt.Axis(format="d", title="Cantidad"), scale=alt.Scale(domain=[0, maxv * 1.1 if maxv>0 else 1])),
-                                color=alt.Color("estatus:N", legend=None)
+                    today = pd.Timestamp.now()
+                    
+                    if periodo_seleccionado == "Personalizado":
+                        with col_custom:
+                            fecha_min = df_temp[date_col].min().date()
+                            fecha_max = df_temp[date_col].max().date()
+                            
+                            rango_fechas = st.date_input(
+                                "Seleccionar rango:",
+                                value=(fecha_min, fecha_max),
+                                min_value=fecha_min,
+                                max_value=fecha_max
                             )
+                            
+                            if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+                                fecha_inicio, fecha_fin = rango_fechas
+                            else:
+                                fecha_inicio = fecha_fin = rango_fechas
+                    else:
+                        dias = periodo_options[periodo_seleccionado]
+                        if dias is None:  # Todo el histórico
+                            fecha_inicio = df_temp[date_col].min().date()
+                            fecha_fin = df_temp[date_col].max().date()
+                        else:
+                            fecha_fin = today.date()
+                            fecha_inicio = (today - pd.Timedelta(days=dias)).date()
+                    
+                    # Filtrar datos por período
+                    mask = (df_temp[date_col].dt.date >= fecha_inicio) & (df_temp[date_col].dt.date <= fecha_fin)
+                    df_periodo = df_temp[mask].copy()
+                    
+                    if df_periodo.empty:
+                        st.info("No hay datos en el período seleccionado.")
+                    else:
+                        # KPIs del período
+                        st.markdown("**KPIs del período seleccionado:**")
+                        
+                        total_periodo = len(df_periodo)
+                        dispersados_periodo = len(df_periodo[df_periodo["estatus"] == "DISPERSADO"])
+                        tasa_conversion = (dispersados_periodo / total_periodo * 100) if total_periodo > 0 else 0
+                        
+                        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+                        
+                        with kpi_col1:
+                            st.metric("Total en período", total_periodo)
+                        with kpi_col2:
+                            st.metric("Dispersados", dispersados_periodo)
+                        with kpi_col3:
+                            st.metric("Tasa de conversión", f"{tasa_conversion:.1f}%")
+                        
+                        st.markdown("---")
+                        
+                        # Gráfico de evolución temporal (por mes)
+                        st.markdown("**Evolución mensual:**")
+                        
+                        df_mensual = df_periodo.copy()
+                        df_mensual["año_mes"] = df_mensual[date_col].dt.to_period("M")
+                        evolucion = df_mensual.groupby("año_mes").size().reset_index(name="cantidad")
+                        evolucion["fecha"] = evolucion["año_mes"].astype(str)
+                        
+                        if len(evolucion) > 0:
+                            line_chart = alt.Chart(evolucion).mark_line(
+                                point=True,
+                                strokeWidth=3
+                            ).encode(
+                                x=alt.X("fecha:O", axis=alt.Axis(title="Mes", labelAngle=-45)),
+                                y=alt.Y("cantidad:Q", axis=alt.Axis(title="Número de Clientes")),
+                                tooltip=["fecha:O", "cantidad:Q"]
+                            ).properties(
+                                height=300,
+                                title="Evolución de Clientes por Mes"
+                            )
+                            
+                            st.altair_chart(line_chart, use_container_width=True)
+                        
+                        # Gráfico de dona: Distribución por estatus en el período
+                        st.markdown("**Distribución por estatus en el período:**")
+                        
+                        estatus_periodo = df_periodo["estatus"].fillna("(Sin estatus)").value_counts()
+                        estatus_periodo_df = estatus_periodo.reset_index()
+                        estatus_periodo_df.columns = ["estatus", "cantidad"]
+                        
+                        dona_chart = alt.Chart(estatus_periodo_df).mark_arc(
+                            innerRadius=50,
+                            outerRadius=120
+                        ).encode(
+                            theta=alt.Theta("cantidad:Q"),
+                            color=alt.Color("estatus:N", scale=alt.Scale(scheme="category20")),
+                            tooltip=[
+                                alt.Tooltip("estatus:N", title="Estatus"),
+                                alt.Tooltip("cantidad:Q", title="Cantidad"),
+                                alt.Tooltip("cantidad:Q", title="Porcentaje", 
+                                          format=".1%", 
+                                          transform="datum.cantidad/{}".format(total_periodo))
+                            ]
+                        ).properties(
+                            height=300,
+                            title="Distribución por Estatus (Gráfico de Dona)"
                         )
-                        labels_r = base_chart_r.mark_text(dy=-8, color="black", fontSize=11).encode(text=alt.Text("conteo:Q", format="d"))
-                        tooltip_r = base_chart_r.encode(tooltip=["estatus:N", alt.Tooltip("conteo:Q", format="d")])
-                        st.altair_chart((tooltip_r + labels_r).properties(height=320), use_container_width=True)
-        except Exception:
-            pass
-
-    # --- NEW: Resumen por Fuente (con rango de fechas) ---
-    st.markdown("---")
-    st.subheader("Resumen por fuente (rango de fechas)")
-    try:
-        dfr_f = df_cli.copy()
-        # elegir columna de fecha por defecto: fecha_ingreso > fecha_dispersion
-        date_col_f = None
-        for c in ("fecha_ingreso", "fecha_dispersion"):
-            if c in dfr_f.columns:
-                date_col_f = c
-                break
-
-        if date_col_f is None:
-            st.info("No hay columnas de fecha (fecha_ingreso/fecha_dispersion) para filtrar por fuente.")
-        else:
-            dfr_f[date_col_f] = pd.to_datetime(dfr_f[date_col_f], errors="coerce")
-            min_date = dfr_f[date_col_f].min()
-            max_date = dfr_f[date_col_f].max()
-            if pd.isna(min_date) or pd.isna(max_date):
-                st.info("No hay valores de fecha válidos en la base para filtrar por fuente.")
-            else:
-                default_start = min_date.date()
-                default_end = max_date.date()
-                drf = st.date_input("Mostrar fuentes desde → hasta", value=(default_start, default_end), key="fuente_date_range")
-                start_date_f, end_date_f = drf if isinstance(drf, tuple) else (drf, drf)
-
-                mask_f = (dfr_f[date_col_f].dt.date >= start_date_f) & (dfr_f[date_col_f].dt.date <= end_date_f)
-                dfr_f_f = dfr_f.loc[mask_f].copy()
-                if dfr_f_f.empty:
-                    st.info("No hay registros en el rango seleccionado para fuentes.")
+                        
+                        st.altair_chart(dona_chart, use_container_width=True)
+        
+        # 🏢 TAB 3: POR SUCURSAL/ASESOR
+        with dash_tab3:
+            st.subheader("Análisis por Organización")
+            
+            # Sub-tabs: Sucursales, Asesores, Fuentes
+            sub_tab1, sub_tab2, sub_tab3 = st.tabs(["🏢 Sucursales", "👥 Asesores", "📢 Fuentes"])
+            
+            # SUB-TAB: SUCURSALES
+            with sub_tab1:
+                sucursal_counts = df_cli["sucursal"].fillna("(Sin sucursal)").value_counts()
+                sucursal_counts = sucursal_counts[sucursal_counts > 0]
+                
+                if sucursal_counts.empty:
+                    st.info("No hay datos de sucursales para mostrar.")
                 else:
-                    # contar por fuente (tratar vacíos como "(Sin fuente)")
-                    sfu = dfr_f_f["fuente"].fillna("").replace({"": "(Sin fuente)"})
-                    all_fuentes = sorted(list(dict.fromkeys(sfu.unique().tolist())))
-                    vcf = sfu.value_counts().reindex(all_fuentes, fill_value=0).reset_index()
-                    vcf.columns = ["fuente", "conteo"]
-
-                    # mostrar métricas en filas de hasta 4
-                    per_row = 4
-                    rowsf = [vcf.iloc[i:i+per_row] for i in range(0, len(vcf), per_row)]
-                    for r in rowsf:
-                        cols = st.columns(len(r))
-                        for i, row in enumerate(r.itertuples(index=False)):
-                            with cols[i]:
-                                st.metric(str(row.fuente), int(row.conteo))
-
-                    # gráfica
-                    order_list_f = all_fuentes
-                    maxv_f = int(vcf["conteo"].max() if not vcf.empty else 0)
-                    base_chart_f = (
-                        alt.Chart(vcf)
-                        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-                        .encode(
-                            x=alt.X("fuente:N", sort=order_list_f, axis=alt.Axis(labelAngle=-40, labelFontSize=11)),
-                            y=alt.Y("conteo:Q", axis=alt.Axis(format="d", title="Cantidad"), scale=alt.Scale(domain=[0, maxv_f * 1.1 if maxv_f>0 else 1])),
-                            color=alt.Color("fuente:N", legend=None)
+                    sucursal_df = sucursal_counts.reset_index()
+                    sucursal_df.columns = ["sucursal", "cantidad"]
+                    sucursal_df["porcentaje"] = (sucursal_df["cantidad"] / total_clientes * 100).round(1)
+                    
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.markdown("**Distribución por sucursal:**")
+                        st.dataframe(
+                            sucursal_df.assign(
+                                **{"Porcentaje": sucursal_df["porcentaje"].astype(str) + "%"}
+                            )[["sucursal", "cantidad", "Porcentaje"]],
+                            use_container_width=True,
+                            hide_index=True
                         )
-                    )
-                    labels_f = base_chart_f.mark_text(dy=-8, color="black", fontSize=11).encode(text=alt.Text("conteo:Q", format="d"))
-                    tooltip_f = base_chart_f.encode(tooltip=["fuente:N", alt.Tooltip("conteo:Q", format="d")])
-                    st.altair_chart((tooltip_f + labels_f).properties(height=320), use_container_width=True)
-    except Exception:
-        pass
+                    
+                    with col2:
+                        chart_suc = alt.Chart(sucursal_df).mark_arc(
+                            innerRadius=30,
+                            outerRadius=100
+                        ).encode(
+                            theta=alt.Theta("cantidad:Q"),
+                            color=alt.Color("sucursal:N", scale=alt.Scale(scheme="set3")),
+                            tooltip=[
+                                alt.Tooltip("sucursal:N", title="Sucursal"),
+                                alt.Tooltip("cantidad:Q", title="Cantidad"),
+                                alt.Tooltip("porcentaje:Q", title="Porcentaje (%)", format=".1f")
+                            ]
+                        ).properties(
+                            height=300,
+                            title="Distribución por Sucursal"
+                        )
+                        
+                        st.altair_chart(chart_suc, use_container_width=True)
+            
+            # SUB-TAB: ASESORES
+            with sub_tab2:
+                asesor_counts = df_cli["asesor"].fillna("(Sin asesor)").value_counts()
+                asesor_counts = asesor_counts[asesor_counts > 0]
+                
+                if asesor_counts.empty:
+                    st.info("No hay datos de asesores para mostrar.")
+                else:
+                    # Top 10 asesores + "Otros" (cuando hay muchos)
+                    if len(asesor_counts) > 10:
+                        top_10 = asesor_counts.head(10)
+                        otros = asesor_counts.tail(len(asesor_counts) - 10).sum()
+                        
+                        # Crear serie combinada
+                        asesor_final = pd.concat([top_10, pd.Series([otros], index=["Otros"])])
+                    else:
+                        asesor_final = asesor_counts
+                    
+                    asesor_df = asesor_final.reset_index()
+                    asesor_df.columns = ["asesor", "cantidad"]
+                    asesor_df["porcentaje"] = (asesor_df["cantidad"] / total_clientes * 100).round(1)
+                    
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.markdown("**Top asesores:**")
+                        st.dataframe(
+                            asesor_df.assign(
+                                **{"Porcentaje": asesor_df["porcentaje"].astype(str) + "%"}
+                            )[["asesor", "cantidad", "Porcentaje"]],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    
+                    with col2:
+                        # Gráfico horizontal para asesores (mejor legibilidad)
+                        chart_ases = alt.Chart(asesor_df).mark_bar(
+                            cornerRadiusTopRight=4,
+                            cornerRadiusBottomRight=4
+                        ).encode(
+                            x=alt.X("cantidad:Q", axis=alt.Axis(title="Cantidad")),
+                            y=alt.Y("asesor:N", sort="-x", axis=alt.Axis(title="Asesor")),
+                            color=alt.Color("asesor:N", scale=alt.Scale(scheme="category20"), legend=None),
+                            tooltip=[
+                                alt.Tooltip("asesor:N", title="Asesor"),
+                                alt.Tooltip("cantidad:Q", title="Cantidad"),
+                                alt.Tooltip("porcentaje:Q", title="Porcentaje (%)", format=".1f")
+                            ]
+                        ).properties(
+                            height=max(300, len(asesor_df) * 30),
+                            title="Distribución por Asesor"
+                        )
+                        
+                        st.altair_chart(chart_ases, use_container_width=True)
+            
+            # SUB-TAB: FUENTES
+            with sub_tab3:
+                fuente_counts = df_cli["fuente"].fillna("(Sin fuente)").value_counts()
+                fuente_counts = fuente_counts[fuente_counts > 0]
+                
+                if fuente_counts.empty:
+                    st.info("No hay datos de fuentes para mostrar.")
+                else:
+                    fuente_df = fuente_counts.reset_index()
+                    fuente_df.columns = ["fuente", "cantidad"]
+                    fuente_df["porcentaje"] = (fuente_df["cantidad"] / total_clientes * 100).round(1)
+                    
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.markdown("**Distribución por fuente:**")
+                        st.dataframe(
+                            fuente_df.assign(
+                                **{"Porcentaje": fuente_df["porcentaje"].astype(str) + "%"}
+                            )[["fuente", "cantidad", "Porcentaje"]],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    
+                    with col2:
+                        # Gráfico de dona para fuentes
+                        chart_fuente = alt.Chart(fuente_df).mark_arc(
+                            innerRadius=40,
+                            outerRadius=110
+                        ).encode(
+                            theta=alt.Theta("cantidad:Q"),
+                            color=alt.Color("fuente:N", scale=alt.Scale(scheme="pastel1")),
+                            tooltip=[
+                                alt.Tooltip("fuente:N", title="Fuente"),
+                                alt.Tooltip("cantidad:Q", title="Cantidad"),
+                                alt.Tooltip("porcentaje:Q", title="Porcentaje (%)", format=".1f")
+                            ]
+                        ).properties(
+                            height=300,
+                            title="Distribución por Fuente de Captación"
+                        )
+                        
+                        st.altair_chart(chart_fuente, use_container_width=True)
 
 # ===== Clientes (alta + edición) =====
 with tab_cli:
