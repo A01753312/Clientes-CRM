@@ -2834,8 +2834,8 @@ with tab_asesores:
             st.rerun()
     
     # ---------- TAB: ASESORES ----------
-    # Reconstruir la base desde disco y aplicar los filtros actuales del sidebar.
-    # Esto asegura que la pestaña de Asesores siempre refleje asesores recién agregados.
+    # CAMBIO: Mostrar TODOS los clientes sin aplicar filtros del sidebar
+    # igual que en la pestaña de clientes
     try:
         _df_all = cargar_y_corregir_clientes()  # Usar la función que carga datos frescos
         
@@ -2844,47 +2844,15 @@ with tab_asesores:
             asesores_unicos = sorted(_df_all['asesor'].fillna('(Sin asesor)').unique().tolist())
             st.info(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**")
             
-        # Preparar masks usando los mismos keys/valores del sidebar
-        SUC_LABEL_EMPTY = "(Sin sucursal)"
-        # CORREGIR: Manejar tanto valores vacíos ("") como None/NaN
-        suc_for_all = _df_all["sucursal"].fillna("").replace({"": SUC_LABEL_EMPTY})
-        f_suc_sel = st.session_state.get("f_suc", SUC_ALL.copy())
-        if isinstance(f_suc_sel, (list, tuple, set)) and len(f_suc_sel) > 0:
-            suc_mask2 = suc_for_all.isin(f_suc_sel)
-        else:
-            suc_mask2 = pd.Series(True, index=_df_all.index)
-
-        ases_for_all = _df_all["asesor"].fillna("").replace({"": "(Sin asesor)"})
-        f_ases_sel = st.session_state.get("f_ases", ASES_ALL.copy())
-        if isinstance(f_ases_sel, (list, tuple, set)) and len(f_ases_sel) > 0:
-            asesor_mask2 = ases_for_all.isin(f_ases_sel)
-        else:
-            asesor_mask2 = pd.Series(True, index=_df_all.index)
-
-        f_est_sel = st.session_state.get("f_est", EST_ALL.copy())
-        if isinstance(f_est_sel, (list, tuple, set)) and len(f_est_sel) > 0:
-            est_mask2 = _df_all["estatus"].isin(f_est_sel)
-        else:
-            est_mask2 = pd.Series(True, index=_df_all.index)
-
-        # Agregar filtro de fuente también
-        fuente_for_all = _df_all["fuente"].fillna("").replace({"": "(Sin fuente)"})
-        f_fuente_sel = st.session_state.get("f_fuente", FUENTE_ALL.copy())
-        if isinstance(f_fuente_sel, (list, tuple, set)) and len(f_fuente_sel) > 0:
-            fuente_mask2 = fuente_for_all.isin(f_fuente_sel)
-        else:
-            fuente_mask2 = pd.Series(True, index=_df_all.index)
-
-        # CAMBIO: En la pestaña de asesores, NO filtrar por asesor para mostrar todos los asesores
-        # Solo aplicar filtros de sucursal, estatus y fuente
-        base_ases = _df_all[suc_mask2 & est_mask2 & fuente_mask2].copy()  # Quitamos asesor_mask2
+        # CAMBIO: NO aplicar ningún filtro del sidebar - mostrar todos los clientes
+        base_ases = _df_all.copy()
         
-        st.info(f" Registros después de aplicar filtros: **{len(base_ases)}**")
+        st.info(f"✅ Mostrando TODOS los registros (sin filtros): **{len(base_ases)}**")
             
     except Exception as e:
-        # Fallback: usar df_ver si algo falla
+        # Fallback: usar df_cli completo si algo falla
         st.error(f"❌ Error en pestaña asesores: {str(e)}")
-        base_ases = df_ver.copy()
+        base_ases = df_cli.copy()
  
     # Si no hay datos tras filtros, informar y continuar (mostrar tarjetas vacías)
     if base_ases.empty:
@@ -2899,10 +2867,10 @@ with tab_asesores:
 
         if date_col is not None:
             try:
-                # CAMBIO: Usar fechas de TODOS los datos (_df_all), no solo los filtrados (base_ases)
-                _df_all[date_col] = pd.to_datetime(_df_all[date_col], errors="coerce")
-                min_date = _df_all[date_col].min()
-                max_date = _df_all[date_col].max()
+                # Usar fechas de TODOS los datos para establecer el rango
+                base_ases[date_col] = pd.to_datetime(base_ases[date_col], errors="coerce")
+                min_date = base_ases[date_col].min()
+                max_date = base_ases[date_col].max()
                 if not pd.isna(min_date) and not pd.isna(max_date):
                     default_start = min_date.date()
                     default_end = max_date.date()
@@ -2910,7 +2878,6 @@ with tab_asesores:
                     start_date, end_date = dr if isinstance(dr, tuple) else (dr, dr)
                     if start_date and end_date:
                         # Aplicar filtro de fecha sobre base_ases
-                        base_ases[date_col] = pd.to_datetime(base_ases[date_col], errors="coerce")
                         mask_date = base_ases[date_col].dt.date
                         base_ases = base_ases[mask_date.between(start_date, end_date)]
                 else:
