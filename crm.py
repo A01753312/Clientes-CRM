@@ -23,70 +23,73 @@ st.set_page_config(
     }
 )
 
-# CSS personalizado para look profesional con paleta Kapitaliza mejorada
+# CSS personalizado para look profesional con tema claro Kapitaliza
 st.markdown("""
 <style>
     /* Ocultar el menú de Streamlit y el footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Tema corporativo Kapitaliza con mejor contraste */
+    /* Tema claro corporativo Kapitaliza */
     .stApp {
-        background-color: #0F1419;
-        color: #FFFFFF;
+        background-color: #FAFBFC;
+        color: #2D3748;
         font-family: 'Inter', 'Roboto', sans-serif;
     }
     
     /* Estilo del header */
     .stApp header {
-        background-color: #1A2332;
+        background-color: #FFFFFF;
         border-bottom: 2px solid #FFD41D;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
-    /* Mejorar tabs con mejor contraste */
+    /* Mejorar tabs con tema claro */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #1A2332;
-        padding: 10px;
+        background-color: #FFFFFF;
+        padding: 12px;
         border-radius: 8px;
-        border: 1px solid #FFD41D;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         padding: 0 24px;
-        background-color: #2D3748;
+        background-color: #F7FAFC;
         border-radius: 8px;
-        border: 2px solid #4A5568;
+        border: 2px solid #E2E8F0;
         font-weight: 600;
-        color: #E2E8F0;
+        color: #4A5568;
         transition: all 0.3s ease;
     }
     
     .stTabs [aria-selected="true"] {
         background-color: #FFD41D;
-        color: #0F1419;
+        color: #2D3748;
         border-color: #FFD41D;
-        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.4);
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
         font-weight: 700;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background-color: #4A5568;
-        color: #FFFFFF;
+        background-color: #EDF2F7;
+        color: #2D3748;
         border-color: #FFD41D;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
-    /* Mejorar métricas con mejor contraste */
+    /* Mejorar métricas con tema claro */
     [data-testid="stMetricValue"] {
         font-size: 32px;
         font-weight: 700;
-        color: #FFFFFF;
+        color: #2D3748;
         font-family: 'Poppins', sans-serif;
     }
     
     [data-testid="stMetricLabel"] {
-        color: #E2E8F0;
+        color: #4A5568;
         font-weight: 600;
         font-size: 14px;
         text-transform: uppercase;
@@ -94,54 +97,60 @@ st.markdown("""
     }
     
     [data-testid="stMetricDelta"] {
-        color: #CBD5E0;
+        color: #718096;
         font-weight: 500;
     }
     
-    /* Cards para métricas corporativas con mejor contraste */
+    /* Cards para métricas corporativas con tema claro */
     div[data-testid="metric-container"] {
-        background-color: #1A2332;
+        background-color: #FFFFFF;
         padding: 20px;
-        border-radius: 10px;
-        border: 2px solid #FFD41D;
-        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.2);
+        border-radius: 12px;
+        border: 2px solid #E2E8F0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         transition: transform 0.3s ease;
     }
     
     div[data-testid="metric-container"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(255, 212, 29, 0.3);
-        border-color: #E6B800;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        border-color: #FFD41D;
     }
     
-    /* Dataframes corporativos con mejor legibilidad */
+    /* Dataframes corporativos con tema claro */
     .dataframe {
-        border: 2px solid #FFD41D;
+        border: 2px solid #E2E8F0;
         border-radius: 10px;
-        background-color: #1A2332;
-        color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.2);
+        background-color: #FFFFFF;
+        color: #2D3748;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
     
     .dataframe th {
-        background-color: #2D3748;
-        color: #FFFFFF;
+        background-color: #F7FAFC;
+        color: #2D3748;
         font-weight: 600;
+        border-bottom: 2px solid #E2E8F0;
     }
     
     .dataframe td {
-        background-color: #1A2332;
-        color: #E2E8F0;
+        background-color: #FFFFFF;
+        color: #4A5568;
+        border-bottom: 1px solid #F1F5F9;
     }
     
-    /* Botones corporativos Kapitaliza con mejor contraste */
+    .dataframe tr:hover {
+        background-color: #F7FAFC;
+    }
+    
+    /* Botones corporativos Kapitaliza con tema claro */
     .stButton > button {
         border-radius: 8px;
         font-weight: 600;
         font-size: 14px;
         transition: all 0.3s ease;
         background-color: #FFD41D;
-        color: #0F1419;
+        color: #2D3748;
         border: none;
         padding: 12px 24px;
         text-transform: uppercase;
@@ -153,42 +162,43 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(255, 212, 29, 0.5);
         background-color: #E6B800;
-        color: #000000;
+        color: #1A202C;
     }
     
-    /* Sidebar corporativo con mejor contraste */
+    /* Sidebar corporativo con tema claro */
     [data-testid="stSidebar"] {
-        background-color: #1A2332;
+        background-color: #FFFFFF;
         border-right: 2px solid #FFD41D;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.05);
     }
     
     [data-testid="stSidebar"] .css-1d391kg {
-        color: #FFFFFF;
+        color: #2D3748;
     }
     
     /* Expanders corporativos */
     .streamlit-expanderHeader {
-        background-color: #2D3748;
+        background-color: #F7FAFC;
         border-radius: 8px;
         font-weight: 600;
-        color: #FFFFFF;
-        border: 1px solid #FFD41D;
+        color: #2D3748;
+        border: 1px solid #E2E8F0;
     }
     
     .streamlit-expanderContent {
-        background-color: #1A2332;
-        border: 1px solid #4A5568;
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
         border-radius: 0 0 8px 8px;
     }
     
-    /* Inputs corporativos con mejor visibilidad */
+    /* Inputs corporativos con tema claro */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stMultiSelect > div > div {
         border-radius: 8px;
-        border: 2px solid #4A5568;
-        background-color: #1A2332;
-        color: #FFFFFF;
+        border: 2px solid #E2E8F0;
+        background-color: #FFFFFF;
+        color: #2D3748;
         font-weight: 500;
         transition: border-color 0.3s ease;
     }
@@ -196,8 +206,8 @@ st.markdown("""
     .stTextInput > div > div > input:focus,
     .stSelectbox > div > div > select:focus {
         border-color: #FFD41D;
-        box-shadow: 0 0 0 2px rgba(255, 212, 29, 0.3);
-        background-color: #2D3748;
+        box-shadow: 0 0 0 2px rgba(255, 212, 29, 0.2);
+        background-color: #FFFBF0;
     }
     
     /* Spinner corporativo */
@@ -205,108 +215,116 @@ st.markdown("""
         border-top-color: #FFD41D !important;
     }
     
-    /* Títulos y encabezados con mejor contraste */
+    /* Títulos y encabezados con tema claro */
     h1, h2, h3 {
-        color: #FFFFFF;
+        color: #2D3748;
         font-family: 'Poppins', sans-serif;
         font-weight: 700;
     }
     
     h1 {
         font-size: 2.5rem;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        color: #1A202C;
     }
     
     h2 {
         font-size: 2rem;
-        color: #E2E8F0;
+        color: #2D3748;
     }
     
     h3 {
         font-size: 1.5rem;
-        color: #E2E8F0;
+        color: #4A5568;
     }
     
-    /* Texto secundario con mejor legibilidad */
+    /* Texto secundario con tema claro */
     .stMarkdown p, .stText {
-        color: #E2E8F0;
+        color: #4A5568;
         line-height: 1.6;
     }
     
-    /* Info boxes con colores corporativos mejorados */
+    /* Info boxes con tema claro */
     .stAlert[data-baseweb="notification"] {
-        background-color: #1A2332;
-        border: 2px solid #4A5568;
+        background-color: #FFFFFF;
+        border: 2px solid #E2E8F0;
         border-radius: 8px;
-        color: #FFFFFF;
+        color: #2D3748;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     
     /* Success (Verde suave) */
     .stSuccess {
-        background-color: #1A2332;
+        background-color: #F0FFF4;
         border-left: 4px solid #4CAF50;
-        color: #FFFFFF;
+        color: #22543D;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.1);
     }
     
     /* Error (Rojo profesional) */
     .stError {
-        background-color: #1A2332;
+        background-color: #FFF5F5;
         border-left: 4px solid #D9534F;
-        color: #FFFFFF;
+        color: #742A2A;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(217, 83, 79, 0.1);
     }
     
     /* Warning */
     .stWarning {
-        background-color: #1A2332;
+        background-color: #FFFBF0;
         border-left: 4px solid #FFD41D;
-        color: #FFFFFF;
+        color: #744210;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.1);
     }
     
     /* Info */
     .stInfo {
-        background-color: #1A2332;
-        border-left: 4px solid #4A5568;
-        color: #FFFFFF;
+        background-color: #F7FAFC;
+        border-left: 4px solid #4299E1;
+        color: #2B6CB0;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(66, 153, 225, 0.1);
     }
     
     /* Selectbox dropdown corporativo */
     .stSelectbox > div > div > div {
-        background-color: #1A2332;
-        color: #FFFFFF;
-        border: 1px solid #4A5568;
+        background-color: #FFFFFF;
+        color: #2D3748;
+        border: 1px solid #E2E8F0;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     
     /* Multiselect corporativo */
     .stMultiSelect > div > div > div {
-        background-color: #1A2332;
-        color: #FFFFFF;
-        border: 1px solid #4A5568;
+        background-color: #FFFFFF;
+        color: #2D3748;
+        border: 1px solid #E2E8F0;
         border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     
-    /* Radio buttons con mejor contraste */
+    /* Radio buttons con tema claro */
     .stRadio > div > label {
-        color: #E2E8F0;
+        color: #2D3748;
         font-weight: 500;
     }
     
-    /* Checkbox con mejor contraste */
+    /* Checkbox con tema claro */
     .stCheckbox > label {
-        color: #E2E8F0;
+        color: #2D3748;
         font-weight: 500;
     }
     
     /* Toast messages */
     .stToast {
-        background-color: #1A2332;
-        color: #FFFFFF;
+        background-color: #FFFFFF;
+        color: #2D3748;
         border: 1px solid #FFD41D;
         border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
     /* Progress bar */
@@ -314,20 +332,42 @@ st.markdown("""
         background-color: #FFD41D;
     }
     
-    /* Caption text con mejor legibilidad */
+    /* Caption text con tema claro */
     .css-1v0mbdj {
-        color: #CBD5E0;
+        color: #718096;
         font-size: 12px;
     }
     
-    /* Mejorar texto general para mejor legibilidad */
+    /* Mejorar texto general para tema claro */
     .stMarkdown, .stText, p, span {
-        color: #E2E8F0 !important;
+        color: #4A5568 !important;
     }
     
     /* Títulos de secciones */
     .css-10trblm {
-        color: #FFFFFF;
+        color: #2D3748;
+    }
+    
+    /* Separadores más suaves */
+    hr {
+        border-color: #E2E8F0;
+        opacity: 0.6;
+    }
+    
+    /* Mejoras adicionales para tema claro */
+    .stContainer {
+        background-color: #FAFBFC;
+    }
+    
+    /* Mejora de contraste en elementos seleccionados */
+    .stSelectbox > div > div > div:hover {
+        background-color: #F7FAFC;
+    }
+    
+    /* Estilo para números y datos importantes */
+    .highlight-number {
+        color: #E6B800;
+        font-weight: 700;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -457,21 +497,21 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional con mejor contraste y legibilidad"""
+    """Renderiza un header profesional con tema claro y elegante"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header con mejor contraste y legibilidad
+    # Header con tema claro profesional
     st.markdown("""
     <div style="
-        background: linear-gradient(135deg, #1A2332 0%, #0F1419 100%);
+        background: linear-gradient(135deg, #FFFFFF 0%, #F7FAFC 100%);
         border: 2px solid #FFD41D;
         padding: 30px;
         border-radius: 12px;
         margin-bottom: 30px;
         text-align: center;
-        box-shadow: 0 8px 25px rgba(255, 212, 29, 0.2);
+        box-shadow: 0 8px 25px rgba(255, 212, 29, 0.15);
     ">
         <h1 style="
             color: #FFD41D; 
@@ -480,17 +520,17 @@ def render_professional_header():
             font-weight: 700; 
             letter-spacing: 3px;
             margin: 0;
-            text-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
+            text-shadow: 0 2px 8px rgba(255, 212, 29, 0.2);
         ">💼 KAPITALIZA</h1>
         
         <p style="
-            color: #FFFFFF; 
+            color: #2D3748; 
             font-size: 1.1rem; 
             margin: 15px 0 20px 0;
             letter-spacing: 1.5px;
             text-transform: uppercase;
-            font-weight: 500;
-            opacity: 0.95;
+            font-weight: 600;
+            opacity: 0.9;
         ">Customer Relationship Management</p>
         
         <div style="
@@ -499,18 +539,18 @@ def render_professional_header():
             margin-top: 20px;
         ">
             <p style="
-                color: #FFFFFF;
+                color: #2D3748;
                 font-size: 1rem;
                 margin: 0;
-                font-weight: 500;
+                font-weight: 600;
             ">
-                Bienvenido, <span style="color: #FFD41D; font-weight: 700;">{user_name}</span>
+                Bienvenido, <span style="color: #E6B800; font-weight: 700;">{user_name}</span>
             </p>
             <p style="
-                color: #E2E8F0;
+                color: #4A5568;
                 font-size: 0.9rem;
                 margin: 8px 0 0 0;
-                font-weight: 400;
+                font-weight: 500;
             ">
                 {current_time}
             </p>
