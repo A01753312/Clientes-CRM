@@ -2919,13 +2919,16 @@ with tab_asesores:
         # Botón para resetear filtros
         col_reset, col_info = st.columns([1, 3])
         with col_reset:
-            if st.button("🔄 Resetear filtros", key="reset_ases_filters"):
-                st.session_state["ases_filter_suc"] = SUC_ASES_ALL
-                st.session_state["ases_filter_asesor"] = ASES_ASES_ALL
-                st.session_state["ases_filter_est"] = EST_ASES_ALL
-                st.session_state["ases_filter_fuente"] = FUENTE_ASES_ALL
-                st.session_state["ases_filter_individual"] = "(Todos)"
-                st.rerun()
+            reset_clicked = st.button("🔄 Resetear filtros", key="reset_ases_filters")
+        
+        # Manejar reset de filtros - usar valores seguros
+        if reset_clicked:
+            # Limpiar todos los filtros estableciendo valores por defecto seguros
+            for key in ["ases_filter_suc", "ases_filter_asesor", "ases_filter_est", "ases_filter_fuente"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.session_state["ases_filter_individual"] = "(Todos)"
+            st.rerun()
         
         # Aplicar filtros específicos de la pestaña de asesores
         try:
