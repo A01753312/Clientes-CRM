@@ -2856,7 +2856,6 @@ with tab_asesores:
     
     # ===== FILTROS ESPECÍFICOS PARA LA PESTAÑA DE ASESORES =====
     st.markdown("---")
-    st.subheader("🔍 Filtros para Asesores")
     
     # Crear opciones para los filtros basadas en los datos cargados
     if not base_ases.empty:
@@ -2873,79 +2872,117 @@ with tab_asesores:
         fuente_for_ases = base_ases["fuente"].fillna("").replace({"": "(Sin fuente)"})
         FUENTE_ASES_ALL = sorted(list(dict.fromkeys(fuente_for_ases.unique().tolist())))
         
-        # Crear filtros en columnas
-        col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
-        
-        with col_f1:
-            f_ases_suc = st.multiselect(
-                "🏢 Sucursales", 
-                SUC_ASES_ALL, 
-                default=st.session_state.get("ases_filter_suc", SUC_ASES_ALL),
-                key="ases_filter_suc"
-            )
-        
-        with col_f2:
-            f_ases_asesor = st.multiselect(
-                "👤 Asesores", 
-                ASES_ASES_ALL, 
-                default=st.session_state.get("ases_filter_asesor", ASES_ASES_ALL),
-                key="ases_filter_asesor"
-            )
-        
-        with col_f3:
-            f_ases_est = st.multiselect(
-                "📊 Estatus", 
-                EST_ASES_ALL, 
-                default=st.session_state.get("ases_filter_est", EST_ASES_ALL),
-                key="ases_filter_est"
-            )
-        
-        with col_f4:
-            f_ases_fuente = st.multiselect(
-                "📢 Fuente", 
-                FUENTE_ASES_ALL, 
-                default=st.session_state.get("ases_filter_fuente", FUENTE_ASES_ALL),
-                key="ases_filter_fuente"
-            )
-        
-        with col_f5:
-            # Filtro rápido por asesor individual (más común)
-            try:
-                current_individual = st.session_state.get("ases_filter_individual", "(Todos)")
-                options_list = ["(Todos)"] + ASES_ASES_ALL
-                if current_individual in options_list:
-                    default_index = options_list.index(current_individual)
-                else:
-                    default_index = 0
-            except:
-                default_index = 0
-                
-            asesor_individual = st.selectbox(
-                "🎯 Ver solo un asesor",
-                ["(Todos)"] + ASES_ASES_ALL,
-                index=default_index,
-                key="ases_filter_individual"
-            )
-        
-        # Botón para resetear filtros
-        col_reset, col_info = st.columns([1, 3])
-        with col_reset:
-            if st.button("🔄 Resetear filtros", key="reset_ases_filters"):
-                # Usar un flag para indicar que se debe resetear en la próxima ejecución
-                st.session_state["_reset_ases_filters"] = True
+        # Contenedor con estilo para filtros
+        with st.container():
+            # Encabezado de filtros con botón de reset
+            col_header, col_reset_btn = st.columns([4, 1])
+            with col_header:
+                st.markdown("### 🔍 Filtros de Búsqueda")
+                st.caption("Refina tu búsqueda usando los filtros disponibles")
+            with col_reset_btn:
+                st.write("")  # Espaciado
+                if st.button("🔄 Resetear", key="reset_ases_filters", use_container_width=True):
+                    st.session_state["_reset_ases_filters"] = True
+                    st.rerun()
+            
+            # Manejar reset si el flag está activo
+            if st.session_state.get("_reset_ases_filters", False):
+                st.session_state["_reset_ases_filters"] = False
+                keys_to_reset = ["ases_filter_suc", "ases_filter_asesor", "ases_filter_est", "ases_filter_fuente", "ases_filter_individual"]
+                for key in keys_to_reset:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
-        
-        # Manejar reset si el flag está activo
-        if st.session_state.get("_reset_ases_filters", False):
-            # Limpiar el flag primero
-            st.session_state["_reset_ases_filters"] = False
-            # Eliminar todas las keys de filtros para que vuelvan a sus defaults
-            keys_to_reset = ["ases_filter_suc", "ases_filter_asesor", "ases_filter_est", "ases_filter_fuente", "ases_filter_individual"]
-            for key in keys_to_reset:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
-        
+            
+            st.markdown("---")
+            
+            # FILTRO DESTACADO: Asesor Individual (más usado)
+            st.markdown("#### 🎯 Búsqueda Rápida por Asesor")
+            col_individual, col_spacer = st.columns([3, 1])
+            with col_individual:
+                try:
+                    current_individual = st.session_state.get("ases_filter_individual", "(Todos)")
+                    options_list = ["(Todos)"] + ASES_ASES_ALL
+                    if current_individual in options_list:
+                        default_index = options_list.index(current_individual)
+                    else:
+                        default_index = 0
+                except:
+                    default_index = 0
+                    
+                asesor_individual = st.selectbox(
+                    "Selecciona un asesor específico o 'Todos' para filtros avanzados:",
+                    ["(Todos)"] + ASES_ASES_ALL,
+                    index=default_index,
+                    key="ases_filter_individual",
+                    label_visibility="collapsed"
+                )
+            
+            # FILTROS AVANZADOS (en expander cuando "Todos" está seleccionado)
+            if asesor_individual == "(Todos)":
+                with st.expander("⚙️ Filtros Avanzados", expanded=True):
+                    st.markdown("**Combina múltiples criterios de búsqueda:**")
+                    
+                    # Primera fila de filtros
+                    col_f1, col_f2 = st.columns(2)
+                    
+                    with col_f1:
+                        st.markdown("##### 🏢 Sucursales")
+                        f_ases_suc = st.multiselect(
+                            "Filtrar por sucursales",
+                            SUC_ASES_ALL,
+                            default=st.session_state.get("ases_filter_suc", SUC_ASES_ALL),
+                            key="ases_filter_suc",
+                            label_visibility="collapsed",
+                            help="Selecciona una o más sucursales"
+                        )
+                        st.caption(f"✓ {len(f_ases_suc)} de {len(SUC_ASES_ALL)} seleccionadas")
+                    
+                    with col_f2:
+                        st.markdown("##### 👥 Asesores")
+                        f_ases_asesor = st.multiselect(
+                            "Filtrar por asesores",
+                            ASES_ASES_ALL,
+                            default=st.session_state.get("ases_filter_asesor", ASES_ASES_ALL),
+                            key="ases_filter_asesor",
+                            label_visibility="collapsed",
+                            help="Selecciona uno o más asesores"
+                        )
+                        st.caption(f"✓ {len(f_ases_asesor)} de {len(ASES_ASES_ALL)} seleccionados")
+                    
+                    # Segunda fila de filtros
+                    col_f3, col_f4 = st.columns(2)
+                    
+                    with col_f3:
+                        st.markdown("##### 📊 Estatus")
+                        f_ases_est = st.multiselect(
+                            "Filtrar por estatus",
+                            EST_ASES_ALL,
+                            default=st.session_state.get("ases_filter_est", EST_ASES_ALL),
+                            key="ases_filter_est",
+                            label_visibility="collapsed",
+                            help="Selecciona uno o más estatus"
+                        )
+                        st.caption(f"✓ {len(f_ases_est)} de {len(EST_ASES_ALL)} seleccionados")
+                    
+                    with col_f4:
+                        st.markdown("##### 📢 Fuentes")
+                        f_ases_fuente = st.multiselect(
+                            "Filtrar por fuentes",
+                            FUENTE_ASES_ALL,
+                            default=st.session_state.get("ases_filter_fuente", FUENTE_ASES_ALL),
+                            key="ases_filter_fuente",
+                            label_visibility="collapsed",
+                            help="Selecciona una o más fuentes de captación"
+                        )
+                        st.caption(f"✓ {len(f_ases_fuente)} de {len(FUENTE_ASES_ALL)} seleccionadas")
+            else:
+                # Si hay un asesor individual seleccionado, usar todos los valores por defecto
+                f_ases_suc = SUC_ASES_ALL
+                f_ases_asesor = ASES_ASES_ALL
+                f_ases_est = EST_ASES_ALL
+                f_ases_fuente = FUENTE_ASES_ALL
+
         # Aplicar filtros específicos de la pestaña de asesores
         try:
             # Filtro por sucursal
@@ -2981,11 +3018,11 @@ with tab_asesores:
             # Aplicar todos los filtros (individual de asesor tiene prioridad)
             base_ases = base_ases[suc_mask_ases & asesor_mask_ases & asesor_individual_mask & est_mask_ases & fuente_mask_ases].copy()
             
-            with col_info:
-                if asesor_individual and asesor_individual != "(Todos)":
-                    st.info(f"🎯 Mostrando solo: **{asesor_individual}** - **{len(base_ases)}** registros")
-                else:
-                    st.info(f"📋 Registros después de filtros: **{len(base_ases)}** de **{len(_df_all)}** totales")
+            # Mostrar información de resultados
+            if asesor_individual and asesor_individual != "(Todos)":
+                st.info(f"🎯 Mostrando solo: **{asesor_individual}** - **{len(base_ases)}** registros")
+            else:
+                st.info(f"📋 Registros después de filtros: **{len(base_ases)}** de **{len(_df_all)}** totales")
         
         except Exception as e:
             st.warning(f"Error aplicando filtros: {e}")
