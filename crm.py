@@ -1460,17 +1460,6 @@ def guardar_usuarios_gsheet(users_data: dict):
     except Exception as e:
         st.error(f"Error guardando usuarios en Google Sheets: {e}")
 
-def sync_usuarios_local_to_gsheet():
-    """
-    Sincroniza usuarios desde el archivo local a Google Sheets
-    Útil para migración inicial
-    """
-    try:
-        local_data = load_users()
-        guardar_usuarios_gsheet(local_data)
-    except Exception as e:
-        st.error(f"Error sincronizando usuarios: {e}")
-
 def load_users() -> dict:
     """
     Carga usuarios primero desde Google Sheets, luego desde archivo local como fallback
@@ -1503,6 +1492,17 @@ def save_users(obj: dict):
         USERS_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
         st.error(f"Error guardando usuarios localmente: {e}")
+
+def sync_usuarios_local_to_gsheet():
+    """
+    Sincroniza usuarios desde el archivo local a Google Sheets
+    Útil para migración inicial
+    """
+    try:
+        local_data = load_users()
+        guardar_usuarios_gsheet(local_data)
+    except Exception as e:
+        st.error(f"Error sincronizando usuarios: {e}")
 
 def get_user(identifier: str) -> dict | None:
     """Buscar usuario por username o por email (compatibilidad backward).
@@ -1862,7 +1862,8 @@ df_cli = cargar_y_corregir_clientes()
 
 # Opciones base
 SUC_LABEL_EMPTY = "(Sin sucursal)"
-sucursal_for_filter = df_cli["sucursal"].replace({"": SUC_LABEL_EMPTY})
+# CORREGIR: Manejar tanto valores vacíos ("") como None/NaN
+sucursal_for_filter = df_cli["sucursal"].fillna("").replace({"": SUC_LABEL_EMPTY})
 SUC_ALL  = sorted(set(SUCURSALES + [SUC_LABEL_EMPTY]))
 
 # Recalcular campos derivados para filtros (asegurar que reflejen la versión en disco)
@@ -2845,7 +2846,8 @@ with tab_asesores:
             
         # Preparar masks usando los mismos keys/valores del sidebar
         SUC_LABEL_EMPTY = "(Sin sucursal)"
-        suc_for_all = _df_all["sucursal"].replace({"": SUC_LABEL_EMPTY})
+        # CORREGIR: Manejar tanto valores vacíos ("") como None/NaN
+        suc_for_all = _df_all["sucursal"].fillna("").replace({"": SUC_LABEL_EMPTY})
         f_suc_sel = st.session_state.get("f_suc", SUC_ALL.copy())
         if isinstance(f_suc_sel, (list, tuple, set)) and len(f_suc_sel) > 0:
             suc_mask2 = suc_for_all.isin(f_suc_sel)
