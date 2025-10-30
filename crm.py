@@ -30,16 +30,22 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Estilo del header */
-    .stApp header {
-        background-color: #f8f9fa;
-        border-bottom: 2px solid #e9ecef;
+    /* Tema oscuro para toda la app */
+    .stApp {
+        background-color: #1e1e1e;
+        color: #ffffff;
     }
     
-    /* Mejorar tabs */
+    /* Estilo del header */
+    .stApp header {
+        background-color: #2d2d2d;
+        border-bottom: 2px solid #404040;
+    }
+    
+    /* Mejorar tabs con tema oscuro */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #f8f9fa;
+        background-color: #2d2d2d;
         padding: 10px;
         border-radius: 8px;
     }
@@ -47,28 +53,40 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         padding: 0 24px;
-        background-color: white;
+        background-color: #404040;
         border-radius: 6px;
-        border: 1px solid #dee2e6;
+        border: 1px solid #555555;
         font-weight: 500;
+        color: #ffffff;
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #0066cc;
+        background-color: #667eea;
         color: white;
-        border-color: #0066cc;
+        border-color: #667eea;
     }
     
-    /* Mejorar métricas */
+    /* Mejorar métricas con tema oscuro */
     [data-testid="stMetricValue"] {
         font-size: 28px;
         font-weight: 600;
+        color: #ffffff;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        color: #cccccc;
+    }
+    
+    [data-testid="stMetricDelta"] {
+        color: #aaaaaa;
     }
     
     /* Mejorar dataframes */
     .dataframe {
-        border: 1px solid #dee2e6;
+        border: 1px solid #555555;
         border-radius: 8px;
+        background-color: #2d2d2d;
+        color: #ffffff;
     }
     
     /* Botones más profesionales */
@@ -76,44 +94,101 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 500;
         transition: all 0.3s;
+        background-color: #667eea;
+        color: white;
+        border: none;
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        background-color: #5a6fd8;
     }
     
     /* Sidebar más elegante */
     [data-testid="stSidebar"] {
-        background-color: #f8f9fa;
+        background-color: #2d2d2d;
+        border-right: 1px solid #404040;
+    }
+    
+    [data-testid="stSidebar"] .css-1d391kg {
+        color: #ffffff;
     }
     
     /* Expanders más elegantes */
     .streamlit-expanderHeader {
-        background-color: #f8f9fa;
+        background-color: #404040;
         border-radius: 6px;
         font-weight: 500;
+        color: #ffffff;
     }
     
     /* Inputs más profesionales */
     .stTextInput > div > div > input,
-    .stSelectbox > div > div > select {
+    .stSelectbox > div > div > select,
+    .stMultiSelect > div > div {
         border-radius: 6px;
-        border: 1px solid #dee2e6;
+        border: 1px solid #555555;
+        background-color: #404040;
+        color: #ffffff;
     }
     
-    /* Cards para métricas */
+    /* Cards para métricas con tema oscuro */
     div[data-testid="metric-container"] {
-        background-color: white;
+        background-color: #2d2d2d;
         padding: 15px;
         border-radius: 8px;
-        border: 1px solid #dee2e6;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #555555;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     
     /* Animación de carga personalizada */
     .stSpinner > div {
-        border-top-color: #0066cc !important;
+        border-top-color: #667eea !important;
+    }
+    
+    /* Mejorar texto general */
+    .stMarkdown, .stText {
+        color: #ffffff;
+    }
+    
+    /* Subheaders */
+    h1, h2, h3 {
+        color: #ffffff;
+    }
+    
+    /* Info boxes */
+    .stAlert {
+        background-color: #404040;
+        border-color: #555555;
+        color: #ffffff;
+    }
+    
+    /* Charts con fondo oscuro */
+    .stPlotlyChart {
+        background-color: #2d2d2d;
+    }
+    
+    /* Selectbox dropdown */
+    .stSelectbox > div > div > div {
+        background-color: #404040;
+        color: #ffffff;
+    }
+    
+    /* Multiselect */
+    .stMultiSelect > div > div > div {
+        background-color: #404040;
+        color: #ffffff;
+    }
+    
+    /* Radio buttons */
+    .stRadio > div > label {
+        color: #ffffff;
+    }
+    
+    /* Checkbox */
+    .stCheckbox > label {
+        color: #ffffff;
     }
 </style>
 """, unsafe_allow_html=True)
