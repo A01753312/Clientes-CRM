@@ -23,54 +23,61 @@ st.set_page_config(
     }
 )
 
-# CSS personalizado para look profesional con paleta Kapitaliza
+# CSS personalizado para look profesional con paleta Kapitaliza mejorada
 st.markdown("""
 <style>
     /* Ocultar el menú de Streamlit y el footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Tema oscuro corporativo Kapitaliza */
+    /* Tema corporativo Kapitaliza con mejor contraste */
     .stApp {
-        background-color: #1E1E1E;
+        background-color: #0F1419;
         color: #FFFFFF;
         font-family: 'Inter', 'Roboto', sans-serif;
     }
     
     /* Estilo del header */
     .stApp header {
-        background-color: #2A2A2A;
-        border-bottom: 2px solid #3C3C3C;
+        background-color: #1A2332;
+        border-bottom: 2px solid #FFD41D;
     }
     
-    /* Mejorar tabs con tema Kapitaliza */
+    /* Mejorar tabs con mejor contraste */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         padding: 10px;
         border-radius: 8px;
-        border: 1px solid #3C3C3C;
+        border: 1px solid #FFD41D;
     }
     
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         padding: 0 24px;
-        background-color: #3C3C3C;
+        background-color: #2D3748;
         border-radius: 8px;
-        border: 2px solid #3C3C3C;
+        border: 2px solid #4A5568;
         font-weight: 600;
-        color: #BFBFBF;
+        color: #E2E8F0;
         transition: all 0.3s ease;
     }
     
     .stTabs [aria-selected="true"] {
         background-color: #FFD41D;
-        color: #1E1E1E;
+        color: #0F1419;
         border-color: #FFD41D;
-        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.4);
+        font-weight: 700;
     }
     
-    /* Mejorar métricas con tema Kapitaliza */
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #4A5568;
+        color: #FFFFFF;
+        border-color: #FFD41D;
+    }
+    
+    /* Mejorar métricas con mejor contraste */
     [data-testid="stMetricValue"] {
         font-size: 32px;
         font-weight: 700;
@@ -79,7 +86,7 @@ st.markdown("""
     }
     
     [data-testid="stMetricLabel"] {
-        color: #BFBFBF;
+        color: #E2E8F0;
         font-weight: 600;
         font-size: 14px;
         text-transform: uppercase;
@@ -87,44 +94,56 @@ st.markdown("""
     }
     
     [data-testid="stMetricDelta"] {
-        color: #BFBFBF;
+        color: #CBD5E0;
         font-weight: 500;
     }
     
-    /* Cards para métricas corporativas */
+    /* Cards para métricas corporativas con mejor contraste */
     div[data-testid="metric-container"] {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         padding: 20px;
         border-radius: 10px;
-        border: 2px solid #3C3C3C;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        border: 2px solid #FFD41D;
+        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.2);
         transition: transform 0.3s ease;
     }
     
     div[data-testid="metric-container"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 6px 16px rgba(255, 212, 29, 0.3);
+        border-color: #E6B800;
     }
     
-    /* Dataframes corporativos */
+    /* Dataframes corporativos con mejor legibilidad */
     .dataframe {
-        border: 2px solid #3C3C3C;
+        border: 2px solid #FFD41D;
         border-radius: 10px;
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.2);
     }
     
-    /* Botones corporativos Kapitaliza */
+    .dataframe th {
+        background-color: #2D3748;
+        color: #FFFFFF;
+        font-weight: 600;
+    }
+    
+    .dataframe td {
+        background-color: #1A2332;
+        color: #E2E8F0;
+    }
+    
+    /* Botones corporativos Kapitaliza con mejor contraste */
     .stButton > button {
         border-radius: 8px;
         font-weight: 600;
         font-size: 14px;
         transition: all 0.3s ease;
         background-color: #FFD41D;
-        color: #1E1E1E;
+        color: #0F1419;
         border: none;
-        padding: 10px 20px;
+        padding: 12px 24px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         box-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
@@ -132,14 +151,15 @@ st.markdown("""
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.4);
+        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.5);
         background-color: #E6B800;
+        color: #000000;
     }
     
-    /* Sidebar corporativo */
+    /* Sidebar corporativo con mejor contraste */
     [data-testid="stSidebar"] {
-        background-color: #2A2A2A;
-        border-right: 2px solid #3C3C3C;
+        background-color: #1A2332;
+        border-right: 2px solid #FFD41D;
     }
     
     [data-testid="stSidebar"] .css-1d391kg {
@@ -148,26 +168,26 @@ st.markdown("""
     
     /* Expanders corporativos */
     .streamlit-expanderHeader {
-        background-color: #3C3C3C;
+        background-color: #2D3748;
         border-radius: 8px;
         font-weight: 600;
         color: #FFFFFF;
-        border: 1px solid #3C3C3C;
+        border: 1px solid #FFD41D;
     }
     
     .streamlit-expanderContent {
-        background-color: #2A2A2A;
-        border: 1px solid #3C3C3C;
+        background-color: #1A2332;
+        border: 1px solid #4A5568;
         border-radius: 0 0 8px 8px;
     }
     
-    /* Inputs corporativos */
+    /* Inputs corporativos con mejor visibilidad */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stMultiSelect > div > div {
         border-radius: 8px;
-        border: 2px solid #3C3C3C;
-        background-color: #2A2A2A;
+        border: 2px solid #4A5568;
+        background-color: #1A2332;
         color: #FFFFFF;
         font-weight: 500;
         transition: border-color 0.3s ease;
@@ -176,7 +196,8 @@ st.markdown("""
     .stTextInput > div > div > input:focus,
     .stSelectbox > div > div > select:focus {
         border-color: #FFD41D;
-        box-shadow: 0 0 0 2px rgba(255, 212, 29, 0.2);
+        box-shadow: 0 0 0 2px rgba(255, 212, 29, 0.3);
+        background-color: #2D3748;
     }
     
     /* Spinner corporativo */
@@ -184,7 +205,7 @@ st.markdown("""
         border-top-color: #FFD41D !important;
     }
     
-    /* Títulos y encabezados */
+    /* Títulos y encabezados con mejor contraste */
     h1, h2, h3 {
         color: #FFFFFF;
         font-family: 'Poppins', sans-serif;
@@ -193,91 +214,98 @@ st.markdown("""
     
     h1 {
         font-size: 2.5rem;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
     }
     
     h2 {
         font-size: 2rem;
+        color: #E2E8F0;
     }
     
     h3 {
         font-size: 1.5rem;
+        color: #E2E8F0;
     }
     
-    /* Texto secundario */
+    /* Texto secundario con mejor legibilidad */
     .stMarkdown p, .stText {
-        color: #BFBFBF;
+        color: #E2E8F0;
         line-height: 1.6;
     }
     
-    /* Info boxes con colores corporativos */
+    /* Info boxes con colores corporativos mejorados */
     .stAlert[data-baseweb="notification"] {
-        background-color: #2A2A2A;
-        border: 2px solid #3C3C3C;
+        background-color: #1A2332;
+        border: 2px solid #4A5568;
         border-radius: 8px;
         color: #FFFFFF;
     }
     
     /* Success (Verde suave) */
     .stSuccess {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         border-left: 4px solid #4CAF50;
         color: #FFFFFF;
+        border-radius: 8px;
     }
     
     /* Error (Rojo profesional) */
     .stError {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         border-left: 4px solid #D9534F;
         color: #FFFFFF;
+        border-radius: 8px;
     }
     
     /* Warning */
     .stWarning {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         border-left: 4px solid #FFD41D;
         color: #FFFFFF;
+        border-radius: 8px;
     }
     
     /* Info */
     .stInfo {
-        background-color: #2A2A2A;
-        border-left: 4px solid #3C3C3C;
+        background-color: #1A2332;
+        border-left: 4px solid #4A5568;
         color: #FFFFFF;
+        border-radius: 8px;
     }
     
     /* Selectbox dropdown corporativo */
     .stSelectbox > div > div > div {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         color: #FFFFFF;
-        border: 1px solid #3C3C3C;
+        border: 1px solid #4A5568;
         border-radius: 8px;
     }
     
     /* Multiselect corporativo */
     .stMultiSelect > div > div > div {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         color: #FFFFFF;
-        border: 1px solid #3C3C3C;
+        border: 1px solid #4A5568;
         border-radius: 8px;
     }
     
-    /* Radio buttons */
+    /* Radio buttons con mejor contraste */
     .stRadio > div > label {
-        color: #FFFFFF;
+        color: #E2E8F0;
         font-weight: 500;
     }
     
-    /* Checkbox */
+    /* Checkbox con mejor contraste */
     .stCheckbox > label {
-        color: #FFFFFF;
+        color: #E2E8F0;
         font-weight: 500;
     }
     
     /* Toast messages */
     .stToast {
-        background-color: #2A2A2A;
+        background-color: #1A2332;
         color: #FFFFFF;
-        border: 1px solid #3C3C3C;
+        border: 1px solid #FFD41D;
         border-radius: 8px;
     }
     
@@ -286,10 +314,20 @@ st.markdown("""
         background-color: #FFD41D;
     }
     
-    /* Caption text */
+    /* Caption text con mejor legibilidad */
     .css-1v0mbdj {
-        color: #BFBFBF;
+        color: #CBD5E0;
         font-size: 12px;
+    }
+    
+    /* Mejorar texto general para mejor legibilidad */
+    .stMarkdown, .stText, p, span {
+        color: #E2E8F0 !important;
+    }
+    
+    /* Títulos de secciones */
+    .css-10trblm {
+        color: #FFFFFF;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -419,52 +457,66 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional usando solo componentes nativos de Streamlit"""
+    """Renderiza un header profesional con mejor contraste y legibilidad"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Crear el header usando columnas nativas
-    col1, col2, col3 = st.columns([1, 6, 1])
-    
-    with col2:
-        # Título principal
-        st.markdown("""
-        <div style="text-align: center; margin-bottom: 25px;">
-            <h1 style="
-                color: #FFD41D; 
-                font-family: 'Poppins', sans-serif;
-                font-size: 2.5rem; 
-                font-weight: 600; 
-                letter-spacing: 3px;
-                margin: 0;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            ">💼 KAPITALIZA</h1>
+    # Header con mejor contraste y legibilidad
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #1A2332 0%, #0F1419 100%);
+        border: 2px solid #FFD41D;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        text-align: center;
+        box-shadow: 0 8px 25px rgba(255, 212, 29, 0.2);
+    ">
+        <h1 style="
+            color: #FFD41D; 
+            font-family: 'Poppins', sans-serif;
+            font-size: 2.8rem; 
+            font-weight: 700; 
+            letter-spacing: 3px;
+            margin: 0;
+            text-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
+        ">💼 KAPITALIZA</h1>
+        
+        <p style="
+            color: #FFFFFF; 
+            font-size: 1.1rem; 
+            margin: 15px 0 20px 0;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            font-weight: 500;
+            opacity: 0.95;
+        ">Customer Relationship Management</p>
+        
+        <div style="
+            border-top: 2px solid #FFD41D;
+            padding-top: 20px;
+            margin-top: 20px;
+        ">
             <p style="
-                color: #BFBFBF; 
-                font-size: 1rem; 
-                margin: 10px 0 5px 0;
-                letter-spacing: 1px;
-                text-transform: uppercase;
-            ">Customer Relationship Management</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Información de usuario con componentes nativos
-        st.markdown("---")  # Línea separadora nativa
-        
-        # Info de usuario usando texto nativo
-        user_col1, user_col2, user_col3 = st.columns([2, 2, 2])
-        
-        with user_col2:
-            st.markdown(f"""
-            <p style="text-align: center; color: #BFBFBF; font-size: 0.9rem; margin: 10px 0;">
-                Bienvenido, <span style="color: #FFD41D; font-weight: 600;">{user_name}</span>
+                color: #FFFFFF;
+                font-size: 1rem;
+                margin: 0;
+                font-weight: 500;
+            ">
+                Bienvenido, <span style="color: #FFD41D; font-weight: 700;">{user_name}</span>
             </p>
-            <p style="text-align: center; color: #3C3C3C; font-size: 0.8rem; margin: 0;">
+            <p style="
+                color: #E2E8F0;
+                font-size: 0.9rem;
+                margin: 8px 0 0 0;
+                font-weight: 400;
+            ">
                 {current_time}
             </p>
-            """, unsafe_allow_html=True)
+        </div>
+    </div>
+    """.format(user_name=user_name, current_time=current_time), unsafe_allow_html=True)
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
