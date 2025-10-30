@@ -353,72 +353,24 @@ def show_notification(message: str, type: str = "success"):
 
 # Funciones de feedback mejorado
 def show_success(message, duration=3):
-    """Muestra mensaje de éxito con colores corporativos Kapitaliza"""
+    """Muestra mensaje de éxito usando componentes nativos de Streamlit"""
     st.toast(f"✅ {message}", icon="✅")
-    st.markdown(f"""
-    <div style="
-        background-color: #2A2A2A;
-        border-left: 4px solid #4CAF50;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 10px 0;
-        color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    ">
-        <strong>✅ Éxito:</strong> {message}
-    </div>
-    """, unsafe_allow_html=True)
+    st.success(f"✅ {message}")
 
 def show_error(message):
-    """Muestra mensaje de error con colores corporativos Kapitaliza"""
+    """Muestra mensaje de error usando componentes nativos de Streamlit"""
     st.toast(f"❌ {message}", icon="❌")
-    st.markdown(f"""
-    <div style="
-        background-color: #2A2A2A;
-        border-left: 4px solid #D9534F;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 10px 0;
-        color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    ">
-        <strong>❌ Error:</strong> {message}
-    </div>
-    """, unsafe_allow_html=True)
+    st.error(f"❌ {message}")
 
 def show_warning(message):
-    """Muestra advertencia con colores corporativos Kapitaliza"""
+    """Muestra advertencia usando componentes nativos de Streamlit"""
     st.toast(f"⚠️ {message}", icon="⚠️")
-    st.markdown(f"""
-    <div style="
-        background-color: #2A2A2A;
-        border-left: 4px solid #FFD41D;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 10px 0;
-        color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    ">
-        <strong>⚠️ Advertencia:</strong> {message}
-    </div>
-    """, unsafe_allow_html=True)
+    st.warning(f"⚠️ {message}")
 
 def show_info(message):
-    """Muestra información con colores corporativos Kapitaliza"""
+    """Muestra información usando componentes nativos de Streamlit"""
     st.toast(f"ℹ️ {message}", icon="ℹ️")
-    st.markdown(f"""
-    <div style="
-        background-color: #2A2A2A;
-        border-left: 4px solid #3C3C3C;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 10px 0;
-        color: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    ">
-        <strong>ℹ️ Información:</strong> {message}
-    </div>
-    """, unsafe_allow_html=True)
+    st.info(f"ℹ️ {message}")
 
 # Cards profesionales para KPIs
 def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊", color: str = "#0066cc"):
@@ -467,61 +419,39 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional corporativo con branding Kapitaliza"""
+    """Renderiza un header profesional corporativo usando componentes nativos de Streamlit"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header con gradiente amarillo corporativo Kapitaliza
-    header_html = f"""
-    <div style="
-        background: linear-gradient(135deg, #FFD41D 0%, #E6B800 100%);
-        padding: 25px;
-        border-radius: 10px;
-        margin-bottom: 25px;
-        color: #1E1E1E;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.3);
-        position: relative;
-        overflow: hidden;
-    ">
-        <div style="
-            background: rgba(0, 0, 0, 0.1);
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 1;
-        "></div>
-        
-        <div style="position: relative; z-index: 2;">
-            <h1 style="
-                margin: 0; 
-                font-size: 2.8rem; 
-                font-weight: 700; 
-                font-family: 'Poppins', sans-serif;
-                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-                letter-spacing: 1px;
-                color: #1E1E1E;
-            ">
+    # Usar columnas para el layout del header
+    col1, col2, col3 = st.columns([1, 3, 1])
+    
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; padding: 20px; margin-bottom: 20px;">
+            <h1 style="color: #FFD41D; font-size: 3rem; margin: 0; font-weight: 700;">
                 🏢 KAPITALIZA CRM
             </h1>
-            <p style="
-                margin: 10px 0 0 0; 
-                font-size: 1.1rem; 
-                font-weight: 600;
-                font-family: 'Inter', sans-serif;
-                opacity: 0.9;
-                color: #1E1E1E;
-            ">
-                Sistema Integral de Gestión de Clientes | {user_name} | {current_time}
+            <p style="color: #BFBFBF; font-size: 1.1rem; margin: 10px 0 0 0;">
+                Sistema Integral de Gestión de Clientes
+            </p>
+            <p style="color: #3C3C3C; font-size: 0.9rem; margin: 5px 0 0 0;">
+                {user_name} | {current_time}
             </p>
         </div>
-    </div>
-    """
+        """.format(user_name=user_name, current_time=current_time), unsafe_allow_html=True)
     
-    st.markdown(header_html, unsafe_allow_html=True)
+    # Línea separadora dorada
+    st.markdown("""
+    <hr style="
+        border: none; 
+        height: 3px; 
+        background: linear-gradient(90deg, #FFD41D 0%, #E6B800 100%);
+        margin: 0 0 30px 0;
+        border-radius: 2px;
+    ">
+    """, unsafe_allow_html=True)
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
