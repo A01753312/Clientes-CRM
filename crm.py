@@ -2629,7 +2629,37 @@ with tab_cli:
                         do_rerun()  # NEW: refresca todo
 
     st.subheader("📋 Lista de clientes")
-    if df_ver.empty:
+    
+    # APLICAR MISMA CORRECCIÓN: Para la pestaña de clientes, usar datos filtrados EXCEPTO por asesor
+    # para mostrar todos los clientes (misma lógica que en tab_asesores)
+    try:
+        # Aplicar filtros SIN incluir el filtro de asesor
+        sucursal_for_filter_cli = df_cli["sucursal"].fillna("").replace({"": "(Sin sucursal)"})
+        fuente_for_filter_cli = df_cli["fuente"].fillna("").replace({"": "(Sin fuente)"})
+        
+        # Aplicar solo filtros de sucursal, estatus y fuente (NO asesor)
+        if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
+            suc_mask_cli = pd.Series(True, index=df_cli.index)
+        else:
+            suc_mask_cli = sucursal_for_filter_cli.isin(f_suc)
+
+        if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
+            est_mask_cli = pd.Series(True, index=df_cli.index)
+        else:
+            est_mask_cli = df_cli["estatus"].isin(f_est)
+
+        if not f_fuente or len(f_fuente) == 0 or set(f_fuente) == set(FUENTE_ALL):
+            fuente_mask_cli = pd.Series(True, index=df_cli.index)
+        else:
+            fuente_mask_cli = fuente_for_filter_cli.isin(f_fuente)
+        
+        # Datos filtrados para clientes (sin filtro de asesor)
+        df_clientes_mostrar = df_cli[suc_mask_cli & est_mask_cli & fuente_mask_cli].copy()
+    except Exception:
+        # Fallback: usar df_ver si hay error
+        df_clientes_mostrar = df_ver.copy()
+    
+    if df_clientes_mostrar.empty:
         st.info("No hay clientes con los filtros seleccionados.")
     else:
         colcfg = {
@@ -2651,19 +2681,19 @@ with tab_cli:
             "fuente": st.column_config.TextColumn("Fuente"),
         }
 
-        df_ver["sucursal"] = df_ver["sucursal"].where(df_ver["sucursal"].isin(SUCURSALES), "")
-        # antes de mostrar el editor, ordenar df_ver por fechas asc
-        df_ver = sort_df_by_dates(df_ver)  # apply ordering
+        df_clientes_mostrar["sucursal"] = df_clientes_mostrar["sucursal"].where(df_clientes_mostrar["sucursal"].isin(SUCURSALES), "")
+        # antes de mostrar el editor, ordenar df_clientes_mostrar por fechas asc
+        df_clientes_mostrar = sort_df_by_dates(df_clientes_mostrar)  # apply ordering
         # FIX: data_editor no acepta ColumnDataKind.DATETIME si la columna está configurada como TextColumn.
         # Convertir las columnas de fecha a strings 'YYYY-MM-DD' para mantener compatibilidad con column_config.
         for _dcol in ("fecha_ingreso", "fecha_dispersion"):
-            if _dcol in df_ver.columns:
+            if _dcol in df_clientes_mostrar.columns:
                 try:
-                    df_ver[_dcol] = pd.to_datetime(df_ver[_dcol], errors="coerce").dt.date.astype(str).replace("NaT", "")
+                    df_clientes_mostrar[_dcol] = pd.to_datetime(df_clientes_mostrar[_dcol], errors="coerce").dt.date.astype(str).replace("NaT", "")
                 except Exception:
-                    df_ver[_dcol] = df_ver[_dcol].astype(str).fillna("")
+                    df_clientes_mostrar[_dcol] = df_clientes_mostrar[_dcol].astype(str).fillna("")
         ed = st.data_editor(
-            df_ver,
+            df_clientes_mostrar,
             use_container_width=True,
             hide_index=True,
             column_config=colcfg,
@@ -2671,9 +2701,9 @@ with tab_cli:
         )
 
         st.markdown("### Cambio de estatus")
-        # asegurar ids_quick esté siempre definido para evitar NameError si df_ver no tiene 'id' o no es DataFrame
+        # asegurar ids_quick esté siempre definido para evitar NameError si df_clientes_mostrar no tiene 'id' o no es DataFrame
         try:
-            ids_quick = (df_ver["id"].tolist() if (isinstance(df_ver, pd.DataFrame) and "id" in df_ver.columns) else [])
+            ids_quick = (df_clientes_mostrar["id"].tolist() if (isinstance(df_clientes_mostrar, pd.DataFrame) and "id" in df_clientes_mostrar.columns) else [])
             ids_quick = [x for x in ids_quick if str(x).strip()]
             try:
                 ids_quick = sorted(ids_quick, key=lambda s: (len(str(s)), str(s)))
