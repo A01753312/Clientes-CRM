@@ -2301,6 +2301,8 @@ with tab_dash:
                         estatus_periodo = df_periodo["estatus"].fillna("(Sin estatus)").value_counts()
                         estatus_periodo_df = estatus_periodo.reset_index()
                         estatus_periodo_df.columns = ["estatus", "cantidad"]
+                        # Agregar porcentaje como columna calculada
+                        estatus_periodo_df["porcentaje"] = (estatus_periodo_df["cantidad"] / total_periodo * 100).round(1)
                         
                         dona_chart = alt.Chart(estatus_periodo_df).mark_arc(
                             innerRadius=50,
@@ -2311,9 +2313,7 @@ with tab_dash:
                             tooltip=[
                                 alt.Tooltip("estatus:N", title="Estatus"),
                                 alt.Tooltip("cantidad:Q", title="Cantidad"),
-                                alt.Tooltip("cantidad:Q", title="Porcentaje", 
-                                          format=".1%", 
-                                          transform="datum.cantidad/{}".format(total_periodo))
+                                alt.Tooltip("porcentaje:Q", title="Porcentaje (%)", format=".1f")
                             ]
                         ).properties(
                             height=300,
