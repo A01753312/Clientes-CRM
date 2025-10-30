@@ -4,6 +4,120 @@
 # - Auto-refresh tras subir documentos o importar Excel
 # - Se ELIMINA la importación de documentos desde ZIP
 
+# === CONFIGURACIÓN PROFESIONAL DEL CRM ===
+import streamlit as st
+import base64
+from datetime import date, datetime
+from pathlib import Path
+
+# Configuración de página (DEBE SER LO PRIMERO)
+st.set_page_config(
+    page_title="CRM Profesional",
+    page_icon="👥",  # o usa tu logo: page_icon="./data/logo.png"
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://tuempresa.com/ayuda',
+        'Report a bug': 'https://tuempresa.com/soporte',
+        'About': '**CRM Profesional** v2.0 - Sistema de gestión de clientes'
+    }
+)
+
+# CSS personalizado para look profesional
+st.markdown("""
+<style>
+    /* Ocultar el menú de Streamlit y el footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Estilo del header */
+    .stApp header {
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #e9ecef;
+    }
+    
+    /* Mejorar tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        padding: 0 24px;
+        background-color: white;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+        font-weight: 500;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #0066cc;
+        color: white;
+        border-color: #0066cc;
+    }
+    
+    /* Mejorar métricas */
+    [data-testid="stMetricValue"] {
+        font-size: 28px;
+        font-weight: 600;
+    }
+    
+    /* Mejorar dataframes */
+    .dataframe {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+    }
+    
+    /* Botones más profesionales */
+    .stButton > button {
+        border-radius: 6px;
+        font-weight: 500;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    /* Sidebar más elegante */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa;
+    }
+    
+    /* Expanders más elegantes */
+    .streamlit-expanderHeader {
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        font-weight: 500;
+    }
+    
+    /* Inputs más profesionales */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div > select {
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+    }
+    
+    /* Cards para métricas */
+    div[data-testid="metric-container"] {
+        background-color: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* Animación de carga personalizada */
+    .stSpinner > div {
+        border-top-color: #0066cc !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 import io
 import re
 import json
@@ -13,19 +127,188 @@ import hashlib
 import secrets
 import difflib
 import unicodedata
-from datetime import date, datetime
-from pathlib import Path
+import time
 
 import pandas as pd
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from google.oauth2.service_account import Credentials
-import streamlit as st
 import shutil
 import altair as alt
 from google.auth.transport.requests import Request
 
 # Debug info removed by user request (sidebar debug block intentionally deleted)
+
+# === FUNCIONES PROFESIONALES DEL CRM ===
+
+# Función para mostrar loading personalizado
+def show_loading(message="Procesando..."):
+    """Muestra un loading spinner más profesional"""
+    return st.spinner(f"⚙️ {message}")
+
+# Función para notificaciones más profesionales
+def show_notification(message: str, type: str = "success"):
+    """
+    Muestra notificaciones profesionales
+    type: 'success', 'info', 'warning', 'error'
+    """
+    icons = {
+        "success": "✅",
+        "info": "ℹ️",
+        "warning": "⚠️",
+        "error": "❌"
+    }
+    
+    icon = icons.get(type, "ℹ️")
+    
+    # Usar toast para notificaciones no intrusivas
+    try:
+        st.toast(f"{icon} {message}", icon=icon)
+    except:
+        # Fallback si toast no está disponible
+        if type == "success":
+            st.success(f"{icon} {message}")
+        elif type == "error":
+            st.error(f"{icon} {message}")
+        elif type == "warning":
+            st.warning(f"{icon} {message}")
+        else:
+            st.info(f"{icon} {message}")
+
+# Funciones de feedback mejorado
+def show_success(message, duration=3):
+    """Muestra mensaje de éxito con auto-dismiss"""
+    st.toast(f"✅ {message}", icon="✅")
+    st.success(message, icon="✅")
+
+def show_error(message):
+    """Muestra mensaje de error más visible"""
+    st.toast(f"❌ {message}", icon="❌")
+    st.error(message, icon="🚫")
+
+def show_warning(message):
+    """Muestra advertencia"""
+    st.toast(f"⚠️ {message}", icon="⚠️")
+    st.warning(message, icon="⚠️")
+
+def show_info(message):
+    """Muestra información"""
+    st.toast(f"ℹ️ {message}", icon="ℹ️")
+    st.info(message, icon="ℹ️")
+
+# Cards profesionales para KPIs
+def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊", color: str = "#0066cc"):
+    """Renderiza una tarjeta KPI profesional"""
+    delta_html = ""
+    if delta:
+        delta_color = "#28a745" if "+" in str(delta) or "↑" in str(delta) else "#dc3545"
+        delta_html = f'<p style="color: {delta_color}; margin: 5px 0 0 0; font-size: 14px;">{delta}</p>'
+    
+    card_html = f"""
+    <div style="
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 4px solid {color};
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.3s;
+    " onmouseover="this.style.transform='translateY(-5px)'" 
+       onmouseout="this.style.transform='translateY(0)'">
+        <div style="display: flex; justify-content: space-between; align-items: start;">
+            <div>
+                <p style="color: #6c757d; margin: 0; font-size: 14px; font-weight: 500;">
+                    {label}
+                </p>
+                <h2 style="color: #212529; margin: 10px 0 0 0; font-size: 32px; font-weight: 700;">
+                    {value}
+                </h2>
+                {delta_html}
+            </div>
+            <div style="font-size: 36px; opacity: 0.3;">
+                {icon}
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+def get_base64_image(image_path):
+    """Convierte imagen a base64 para embedding en HTML"""
+    import base64
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+# Header profesional
+def render_professional_header():
+    """Renderiza un header profesional con logo y título"""
+    logo_path = find_logo_path()
+    
+    # Contenedor con estilo
+    header_html = """
+    <div style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    ">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 20px;">
+                {}
+                <div>
+                    <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 700;">
+                        CRM Profesional
+                    </h1>
+                    <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 14px;">
+                        Sistema de Gestión de Clientes
+                    </p>
+                </div>
+            </div>
+            <div style="text-align: right; color: white;">
+                <p style="margin: 0; font-size: 12px; opacity: 0.9;">
+                    👤 {}
+                </p>
+                <p style="margin: 5px 0 0 0; font-size: 11px; opacity: 0.8;">
+                    🕐 {}
+                </p>
+            </div>
+        </div>
+    </div>
+    """
+    
+    logo_html = ""
+    if logo_path and logo_path.exists():
+        logo_html = f'<img src="data:image/png;base64,{get_base64_image(logo_path)}" style="height: 60px; border-radius: 8px;">'
+    
+    u = current_user()
+    user_name = u.get('user') or u.get('email') if u else "Usuario"
+    current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
+    
+    st.markdown(
+        header_html.format(logo_html, user_name, current_time),
+        unsafe_allow_html=True
+    )
+
+def run_with_progress(func, steps: list, *args, **kwargs):
+    """Ejecuta función con barra de progreso"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    total_steps = len(steps)
+    for i, step in enumerate(steps):
+        progress = (i + 1) / total_steps
+        progress_bar.progress(progress)
+        status_text.text(f"⚙️ {step}...")
+        
+    result = func(*args, **kwargs)
+    
+    progress_bar.progress(1.0)
+    status_text.text("✅ Completado!")
+    time.sleep(0.5)
+    progress_bar.empty()
+    status_text.empty()
+    
+    return result
 
 # Paths and data dirs
 DATA_DIR = Path("data")
@@ -2024,15 +2307,8 @@ except Exception:
     pass
 
 # ---------- Main UI con pestañas ----------  # NEW
-# Mostrar automáticamente el logo detectado en la carpeta data si existe
-logo_path = find_logo_path()
-col_logo, col_title = st.columns([2, 9])
-if logo_path and logo_path.exists():
-    with col_logo:
-        # Cambiado para evitar warning: use_container_width en lugar de use_column_width
-        st.image(str(logo_path), use_container_width=False, width=250)
-with col_title:
-    st.title("👤 Clientes / CRM")
+# Header profesional
+render_professional_header()
 
 tab_dash, tab_cli, tab_docs, tab_import, tab_hist, tab_asesores = st.tabs(
     ["📊 Dashboard", "📋 Clientes", "📎 Documentos", "📥 Importar", "🗂️ Historial", " 👥 Asesores"]
@@ -2067,41 +2343,45 @@ with tab_dash:
             estatus_counts.get("REC EDAD", 0)
         ])
         
-        # Mostrar KPIs en columnas
+        # Mostrar KPIs profesionales en columnas
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         with kpi1:
-            st.metric(
-                label="👥 Total de Clientes",
+            render_kpi_card(
+                label="Total de Clientes",
                 value=total_clientes,
-                help="Número total de clientes en la base de datos"
+                icon="👥",
+                color="#0066cc"
             )
         
         with kpi2:
             tasa_exito = (dispersados / total_clientes * 100) if total_clientes > 0 else 0
-            st.metric(
-                label="✅ Dispersados (Éxito)",
+            render_kpi_card(
+                label="Dispersados (Éxito)",
                 value=dispersados,
-                delta=f"{tasa_exito:.1f}% del total",
-                help="Clientes que han completado exitosamente el proceso"
+                delta=f"↑ {tasa_exito:.1f}% del total",
+                icon="✅",
+                color="#28a745"
             )
         
         with kpi3:
             tasa_proceso = (en_proceso / total_clientes * 100) if total_clientes > 0 else 0
-            st.metric(
-                label="⏳ En Proceso",
+            render_kpi_card(
+                label="En Proceso",
                 value=en_proceso,
-                delta=f"{tasa_proceso:.1f}% del total",
-                help="Clientes en onboarding, pendientes o en evaluación"
+                delta=f"⏳ {tasa_proceso:.1f}% del total",
+                icon="⏳",
+                color="#ffc107"
             )
         
         with kpi4:
             tasa_rechazo = (rechazados / total_clientes * 100) if total_clientes > 0 else 0
-            st.metric(
-                label="❌ Rechazados",
+            render_kpi_card(
+                label="Rechazados",
                 value=rechazados,
-                delta=f"{tasa_rechazo:.1f}% del total",
-                help="Clientes rechazados por diversos motivos"
+                delta=f"↓ {tasa_rechazo:.1f}% del total",
+                icon="❌",
+                color="#dc3545"
             )
         
         st.markdown("---")
