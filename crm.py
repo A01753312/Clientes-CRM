@@ -202,7 +202,7 @@ def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊
     delta_html = ""
     if delta:
         delta_color = "#28a745" if "+" in str(delta) or "↑" in str(delta) else "#dc3545"
-        delta_html = f'<p style="color: {delta_color}; margin: 5px 0 0 0; font-size: 14px;">{delta}</p>'
+        delta_html = f'<p style="color: {delta_color}; margin: 5px 0 0 0; font-size: 14px; font-weight: 500;">{delta}</p>'
     
     card_html = f"""
     <div style="
@@ -211,23 +211,26 @@ def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊
         border-radius: 12px;
         border-left: 4px solid {color};
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transition: transform 0.3s;
-    " onmouseover="this.style.transform='translateY(-5px)'" 
-       onmouseout="this.style.transform='translateY(0)'">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div>
-                <p style="color: #6c757d; margin: 0; font-size: 14px; font-weight: 500;">
+        margin-bottom: 10px;
+        height: 140px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    ">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+                <p style="color: #6c757d; margin: 0; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">
                     {label}
                 </p>
-                <h2 style="color: #212529; margin: 10px 0 0 0; font-size: 32px; font-weight: 700;">
+                <h2 style="color: #212529; margin: 10px 0 0 0; font-size: 32px; font-weight: 700; line-height: 1;">
                     {value}
                 </h2>
-                {delta_html}
             </div>
-            <div style="font-size: 36px; opacity: 0.3;">
+            <div style="font-size: 32px; opacity: 0.4; margin-left: 15px;">
                 {icon}
             </div>
         </div>
+        {delta_html}
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
@@ -238,56 +241,33 @@ def get_base64_image(image_path):
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-# Header profesional
+# Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional con logo y título"""
-    logo_path = find_logo_path()
-    
-    # Contenedor con estilo
-    header_html = """
-    <div style="
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    ">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                {}
-                <div>
-                    <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 700;">
-                        CRM Profesional
-                    </h1>
-                    <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 14px;">
-                        Sistema de Gestión de Clientes
-                    </p>
-                </div>
-            </div>
-            <div style="text-align: right; color: white;">
-                <p style="margin: 0; font-size: 12px; opacity: 0.9;">
-                    👤 {}
-                </p>
-                <p style="margin: 5px 0 0 0; font-size: 11px; opacity: 0.8;">
-                    🕐 {}
-                </p>
-            </div>
-        </div>
-    </div>
-    """
-    
-    logo_html = ""
-    if logo_path and logo_path.exists():
-        logo_html = f'<img src="data:image/png;base64,{get_base64_image(logo_path)}" style="height: 60px; border-radius: 8px;">'
-    
+    """Renderiza un header profesional simplificado"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    st.markdown(
-        header_html.format(logo_html, user_name, current_time),
-        unsafe_allow_html=True
-    )
+    # Header con gradiente simple
+    header_html = f"""
+    <div style="
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 25px;
+        border-radius: 10px;
+        margin-bottom: 25px;
+        color: white;
+        text-align: center;
+    ">
+        <h1 style="margin: 0; font-size: 36px; font-weight: 700;">
+            👥 CRM Profesional
+        </h1>
+        <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">
+            Sistema de Gestión de Clientes | {user_name} | {current_time}
+        </p>
+    </div>
+    """
+    
+    st.markdown(header_html, unsafe_allow_html=True)
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
@@ -2347,41 +2327,37 @@ with tab_dash:
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         with kpi1:
-            render_kpi_card(
-                label="Total de Clientes",
+            st.metric(
+                label="👥 Total de Clientes",
                 value=total_clientes,
-                icon="👥",
-                color="#0066cc"
+                help="Número total de clientes en la base de datos"
             )
         
         with kpi2:
             tasa_exito = (dispersados / total_clientes * 100) if total_clientes > 0 else 0
-            render_kpi_card(
-                label="Dispersados (Éxito)",
+            st.metric(
+                label="✅ Dispersados (Éxito)",
                 value=dispersados,
-                delta=f"↑ {tasa_exito:.1f}% del total",
-                icon="✅",
-                color="#28a745"
+                delta=f"{tasa_exito:.1f}% del total",
+                help="Clientes que han completado exitosamente el proceso"
             )
         
         with kpi3:
             tasa_proceso = (en_proceso / total_clientes * 100) if total_clientes > 0 else 0
-            render_kpi_card(
-                label="En Proceso",
+            st.metric(
+                label="⏳ En Proceso",
                 value=en_proceso,
-                delta=f"⏳ {tasa_proceso:.1f}% del total",
-                icon="⏳",
-                color="#ffc107"
+                delta=f"{tasa_proceso:.1f}% del total",
+                help="Clientes en onboarding, pendientes o en evaluación"
             )
         
         with kpi4:
             tasa_rechazo = (rechazados / total_clientes * 100) if total_clientes > 0 else 0
-            render_kpi_card(
-                label="Rechazados",
+            st.metric(
+                label="❌ Rechazados",
                 value=rechazados,
-                delta=f"↓ {tasa_rechazo:.1f}% del total",
-                icon="❌",
-                color="#dc3545"
+                delta=f"{tasa_rechazo:.1f}% del total",
+                help="Clientes rechazados por diversos motivos"
             )
         
         st.markdown("---")
