@@ -419,76 +419,52 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional corporativo con diseño elegante"""
+    """Renderiza un header profesional usando solo componentes nativos de Streamlit"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header profesional con diseño corporativo elegante
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #2A2A2A 0%, #1E1E1E 100%);
-        border: 2px solid #FFD41D;
-        padding: 30px;
-        border-radius: 12px;
-        margin-bottom: 30px;
-        text-align: center;
-        box-shadow: 0 8px 25px rgba(255, 212, 29, 0.15);
-    ">
-        <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-            <div style="
-                background: linear-gradient(135deg, #FFD41D 0%, #E6B800 100%);
-                width: 60px;
-                height: 60px;
-                border-radius: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-right: 20px;
-                box-shadow: 0 4px 12px rgba(255, 212, 29, 0.3);
-            ">
-                <span style="font-size: 28px; color: #1E1E1E;">💼</span>
-            </div>
-            <div style="text-align: left;">
-                <h1 style="
-                    color: #FFFFFF;
-                    margin: 0;
-                    font-size: 2.2rem;
-                    font-weight: 600;
-                    font-family: 'Poppins', sans-serif;
-                    letter-spacing: 2px;
-                ">
-                    KAPITALIZA
-                </h1>
-                <p style="
-                    color: #FFD41D;
-                    margin: 5px 0 0 0;
-                    font-size: 0.9rem;
-                    font-weight: 500;
-                    letter-spacing: 1px;
-                    text-transform: uppercase;
-                ">
-                    Customer Relationship Management
-                </p>
-            </div>
-        </div>
-        
-        <div style="
-            border-top: 1px solid #3C3C3C;
-            padding-top: 15px;
-            margin-top: 15px;
-        ">
-            <p style="
-                color: #BFBFBF;
+    # Crear el header usando columnas nativas
+    col1, col2, col3 = st.columns([1, 6, 1])
+    
+    with col2:
+        # Título principal
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 25px;">
+            <h1 style="
+                color: #FFD41D; 
+                font-family: 'Poppins', sans-serif;
+                font-size: 2.5rem; 
+                font-weight: 600; 
+                letter-spacing: 3px;
                 margin: 0;
-                font-size: 0.85rem;
-                font-weight: 400;
-            ">
-                Bienvenido, <span style="color: #FFD41D; font-weight: 600;">{user_name}</span> | {current_time}
-            </p>
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            ">💼 KAPITALIZA</h1>
+            <p style="
+                color: #BFBFBF; 
+                font-size: 1rem; 
+                margin: 10px 0 5px 0;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            ">Customer Relationship Management</p>
         </div>
-    </div>
-    """.format(user_name=user_name, current_time=current_time), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        
+        # Información de usuario con componentes nativos
+        st.markdown("---")  # Línea separadora nativa
+        
+        # Info de usuario usando texto nativo
+        user_col1, user_col2, user_col3 = st.columns([2, 2, 2])
+        
+        with user_col2:
+            st.markdown(f"""
+            <p style="text-align: center; color: #BFBFBF; font-size: 0.9rem; margin: 10px 0;">
+                Bienvenido, <span style="color: #FFD41D; font-weight: 600;">{user_name}</span>
+            </p>
+            <p style="text-align: center; color: #3C3C3C; font-size: 0.8rem; margin: 0;">
+                {current_time}
+            </p>
+            """, unsafe_allow_html=True)
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
