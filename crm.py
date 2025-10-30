@@ -2880,7 +2880,7 @@ with tab_asesores:
             f_ases_suc = st.multiselect(
                 "🏢 Sucursales", 
                 SUC_ASES_ALL, 
-                default=SUC_ASES_ALL,
+                default=st.session_state.get("ases_filter_suc", SUC_ASES_ALL),
                 key="ases_filter_suc"
             )
         
@@ -2888,7 +2888,7 @@ with tab_asesores:
             f_ases_asesor = st.multiselect(
                 "👤 Asesores", 
                 ASES_ASES_ALL, 
-                default=ASES_ASES_ALL,
+                default=st.session_state.get("ases_filter_asesor", ASES_ASES_ALL),
                 key="ases_filter_asesor"
             )
         
@@ -2896,7 +2896,7 @@ with tab_asesores:
             f_ases_est = st.multiselect(
                 "📊 Estatus", 
                 EST_ASES_ALL, 
-                default=EST_ASES_ALL,
+                default=st.session_state.get("ases_filter_est", EST_ASES_ALL),
                 key="ases_filter_est"
             )
         
@@ -2904,30 +2904,46 @@ with tab_asesores:
             f_ases_fuente = st.multiselect(
                 "📢 Fuente", 
                 FUENTE_ASES_ALL, 
-                default=FUENTE_ASES_ALL,
+                default=st.session_state.get("ases_filter_fuente", FUENTE_ASES_ALL),
                 key="ases_filter_fuente"
             )
         
         with col_f5:
             # Filtro rápido por asesor individual (más común)
+            try:
+                current_individual = st.session_state.get("ases_filter_individual", "(Todos)")
+                options_list = ["(Todos)"] + ASES_ASES_ALL
+                if current_individual in options_list:
+                    default_index = options_list.index(current_individual)
+                else:
+                    default_index = 0
+            except:
+                default_index = 0
+                
             asesor_individual = st.selectbox(
                 "🎯 Ver solo un asesor",
                 ["(Todos)"] + ASES_ASES_ALL,
+                index=default_index,
                 key="ases_filter_individual"
             )
         
         # Botón para resetear filtros
         col_reset, col_info = st.columns([1, 3])
         with col_reset:
-            reset_clicked = st.button("🔄 Resetear filtros", key="reset_ases_filters")
+            if st.button("🔄 Resetear filtros", key="reset_ases_filters"):
+                # Usar un flag para indicar que se debe resetear en la próxima ejecución
+                st.session_state["_reset_ases_filters"] = True
+                st.rerun()
         
-        # Manejar reset de filtros - usar valores seguros
-        if reset_clicked:
-            # Limpiar todos los filtros estableciendo valores por defecto seguros
-            for key in ["ases_filter_suc", "ases_filter_asesor", "ases_filter_est", "ases_filter_fuente"]:
+        # Manejar reset si el flag está activo
+        if st.session_state.get("_reset_ases_filters", False):
+            # Limpiar el flag primero
+            st.session_state["_reset_ases_filters"] = False
+            # Eliminar todas las keys de filtros para que vuelvan a sus defaults
+            keys_to_reset = ["ases_filter_suc", "ases_filter_asesor", "ases_filter_est", "ases_filter_fuente", "ases_filter_individual"]
+            for key in keys_to_reset:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.session_state["ases_filter_individual"] = "(Todos)"
             st.rerun()
         
         # Aplicar filtros específicos de la pestaña de asesores
