@@ -1853,8 +1853,11 @@ st.sidebar.caption("Filtros")
 # IMPORTANTE: Usar este botón cuando los datos de Google Sheets no aparezcan en la app
 if st.sidebar.button("🔄 Recargar datos", help="Fuerza la recarga de datos desde Google Sheets"):
     with st.spinner("Recargando datos desde Google Sheets..."):
+        # Limpiar cache de session_state relacionado con carga
+        for key in ['gs_load_msg_shown', 'gs_debug_shown']:
+            st.session_state.pop(key, None)
         limpiar_cache_gsheets()
-    st.success("✅ Datos recargados desde Google Sheets")
+    st.toast("✅ Datos recargados desde Google Sheets", icon="✅")
     do_rerun()
 
 # Cargar datos frescos para el sidebar
@@ -2824,30 +2827,22 @@ with tab_cli:
 with tab_asesores:
     st.subheader("👥 Dashboard por asesor")
     
-    # Botón de debug para forzar recarga
-    col_debug, col_refresh = st.columns([3, 1])
-    with col_refresh:
-        if st.button("🔄 Forzar recarga desde Google Sheets", help="Recarga los datos directamente desde Google Sheets"):
-            # Limpiar cache de session_state relacionado con carga
-            for key in ['gs_load_msg_shown', 'gs_debug_shown']:
-                st.session_state.pop(key, None)
-            st.rerun()
-    
     # ---------- TAB: ASESORES ----------
     # CAMBIO: Mostrar TODOS los clientes sin aplicar filtros del sidebar
     # igual que en la pestaña de clientes
     try:
         _df_all = cargar_y_corregir_clientes()  # Usar la función que carga datos frescos
         
-        st.info(f"📊 Total de registros cargados: **{len(_df_all)}**")
+        # Mostrar información como toasts temporales
+        st.toast(f"📊 Total de registros cargados: **{len(_df_all)}**", icon="📊")
         if not _df_all.empty:
             asesores_unicos = sorted(_df_all['asesor'].fillna('(Sin asesor)').unique().tolist())
-            st.info(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**")
+            st.toast(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**", icon="👥")
             
         # CAMBIO: NO aplicar ningún filtro del sidebar - mostrar todos los clientes
         base_ases = _df_all.copy()
         
-        st.info(f"✅ Mostrando TODOS los registros (sin filtros): **{len(base_ases)}**")
+        st.toast(f"✅ Mostrando TODOS los registros (sin filtros): **{len(base_ases)}**", icon="✅")
             
     except Exception as e:
         # Fallback: usar df_cli completo si algo falla
