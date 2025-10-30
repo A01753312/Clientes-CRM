@@ -2317,7 +2317,7 @@ with tab_dash:
                             ]
                         ).properties(
                             height=300,
-                            title="Distribución por Estatus (Gráfico de Dona)"
+                            title="Distribución por Estatus"
                         )
                         
                         st.altair_chart(dona_chart, use_container_width=True)
@@ -2788,7 +2788,17 @@ with tab_asesores:
         else:
             est_mask2 = pd.Series(True, index=_df_all.index)
 
-        base_ases = _df_all[suc_mask2 & asesor_mask2 & est_mask2].copy()
+        # Agregar filtro de fuente también
+        fuente_for_all = _df_all["fuente"].fillna("").replace({"": "(Sin fuente)"})
+        f_fuente_sel = st.session_state.get("f_fuente", FUENTE_ALL.copy())
+        if isinstance(f_fuente_sel, (list, tuple, set)) and len(f_fuente_sel) > 0:
+            fuente_mask2 = fuente_for_all.isin(f_fuente_sel)
+        else:
+            fuente_mask2 = pd.Series(True, index=_df_all.index)
+
+        # CAMBIO: En la pestaña de asesores, NO filtrar por asesor para mostrar todos los asesores
+        # Solo aplicar filtros de sucursal, estatus y fuente
+        base_ases = _df_all[suc_mask2 & est_mask2 & fuente_mask2].copy()  # Quitamos asesor_mask2
     except Exception:
         # Fallback: usar df_ver si algo falla
         base_ases = df_ver.copy()
