@@ -2853,6 +2853,125 @@ with tab_asesores:
         # Fallback: usar df_cli completo si algo falla
         st.error(f"❌ Error en pestaña asesores: {str(e)}")
         base_ases = df_cli.copy()
+    
+    # ===== FILTROS ESPECÍFICOS PARA LA PESTAÑA DE ASESORES =====
+    st.markdown("---")
+    st.subheader("🔍 Filtros para Asesores")
+    
+    # Crear opciones para los filtros basadas en los datos cargados
+    if not base_ases.empty:
+        # Preparar opciones de filtros
+        sucursal_for_ases = base_ases["sucursal"].fillna("").replace({"": "(Sin sucursal)"})
+        SUC_ASES_ALL = sorted(list(dict.fromkeys(sucursal_for_ases.unique().tolist())))
+        
+        asesor_for_ases = base_ases["asesor"].fillna("").replace({"": "(Sin asesor)"})
+        ASES_ASES_ALL = sorted(list(dict.fromkeys(asesor_for_ases.unique().tolist())))
+        
+        estatus_for_ases = base_ases["estatus"].fillna("").unique().tolist()
+        EST_ASES_ALL = sorted([e for e in estatus_for_ases if e])
+        
+        fuente_for_ases = base_ases["fuente"].fillna("").replace({"": "(Sin fuente)"})
+        FUENTE_ASES_ALL = sorted(list(dict.fromkeys(fuente_for_ases.unique().tolist())))
+        
+        # Crear filtros en columnas
+        col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
+        
+        with col_f1:
+            f_ases_suc = st.multiselect(
+                "🏢 Sucursales", 
+                SUC_ASES_ALL, 
+                default=SUC_ASES_ALL,
+                key="ases_filter_suc"
+            )
+        
+        with col_f2:
+            f_ases_asesor = st.multiselect(
+                "👤 Asesores", 
+                ASES_ASES_ALL, 
+                default=ASES_ASES_ALL,
+                key="ases_filter_asesor"
+            )
+        
+        with col_f3:
+            f_ases_est = st.multiselect(
+                "📊 Estatus", 
+                EST_ASES_ALL, 
+                default=EST_ASES_ALL,
+                key="ases_filter_est"
+            )
+        
+        with col_f4:
+            f_ases_fuente = st.multiselect(
+                "📢 Fuente", 
+                FUENTE_ASES_ALL, 
+                default=FUENTE_ASES_ALL,
+                key="ases_filter_fuente"
+            )
+        
+        with col_f5:
+            # Filtro rápido por asesor individual (más común)
+            asesor_individual = st.selectbox(
+                "🎯 Ver solo un asesor",
+                ["(Todos)"] + ASES_ASES_ALL,
+                key="ases_filter_individual"
+            )
+        
+        # Botón para resetear filtros
+        col_reset, col_info = st.columns([1, 3])
+        with col_reset:
+            if st.button("🔄 Resetear filtros", key="reset_ases_filters"):
+                st.session_state["ases_filter_suc"] = SUC_ASES_ALL
+                st.session_state["ases_filter_asesor"] = ASES_ASES_ALL
+                st.session_state["ases_filter_est"] = EST_ASES_ALL
+                st.session_state["ases_filter_fuente"] = FUENTE_ASES_ALL
+                st.session_state["ases_filter_individual"] = "(Todos)"
+                st.rerun()
+        
+        # Aplicar filtros específicos de la pestaña de asesores
+        try:
+            # Filtro por sucursal
+            if f_ases_suc and len(f_ases_suc) < len(SUC_ASES_ALL):
+                suc_mask_ases = sucursal_for_ases.isin(f_ases_suc)
+            else:
+                suc_mask_ases = pd.Series(True, index=base_ases.index)
+            
+            # Filtro por asesor (multiselect)
+            if f_ases_asesor and len(f_ases_asesor) < len(ASES_ASES_ALL):
+                asesor_mask_ases = asesor_for_ases.isin(f_ases_asesor)
+            else:
+                asesor_mask_ases = pd.Series(True, index=base_ases.index)
+            
+            # Filtro individual de asesor (selectbox) - tiene prioridad si se selecciona
+            if asesor_individual and asesor_individual != "(Todos)":
+                asesor_individual_mask = asesor_for_ases == asesor_individual
+            else:
+                asesor_individual_mask = pd.Series(True, index=base_ases.index)
+            
+            # Filtro por estatus
+            if f_ases_est and len(f_ases_est) < len(EST_ASES_ALL):
+                est_mask_ases = base_ases["estatus"].isin(f_ases_est)
+            else:
+                est_mask_ases = pd.Series(True, index=base_ases.index)
+            
+            # Filtro por fuente
+            if f_ases_fuente and len(f_ases_fuente) < len(FUENTE_ASES_ALL):
+                fuente_mask_ases = fuente_for_ases.isin(f_ases_fuente)
+            else:
+                fuente_mask_ases = pd.Series(True, index=base_ases.index)
+            
+            # Aplicar todos los filtros (individual de asesor tiene prioridad)
+            base_ases = base_ases[suc_mask_ases & asesor_mask_ases & asesor_individual_mask & est_mask_ases & fuente_mask_ases].copy()
+            
+            with col_info:
+                if asesor_individual and asesor_individual != "(Todos)":
+                    st.info(f"🎯 Mostrando solo: **{asesor_individual}** - **{len(base_ases)}** registros")
+                else:
+                    st.info(f"📋 Registros después de filtros: **{len(base_ases)}** de **{len(_df_all)}** totales")
+        
+        except Exception as e:
+            st.warning(f"Error aplicando filtros: {e}")
+    
+    st.markdown("---")
  
     # Si no hay datos tras filtros, informar y continuar (mostrar tarjetas vacías)
     if base_ases.empty:
