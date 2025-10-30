@@ -61,9 +61,9 @@ st.markdown("""
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #667eea;
+        background-color: #f39c12;
         color: white;
-        border-color: #667eea;
+        border-color: #f39c12;
     }
     
     /* Mejorar métricas con tema oscuro */
@@ -94,15 +94,15 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 500;
         transition: all 0.3s;
-        background-color: #667eea;
+        background-color: #f39c12;
         color: white;
         border: none;
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
-        background-color: #5a6fd8;
+        box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
+        background-color: #e67e22;
     }
     
     /* Sidebar más elegante */
@@ -144,7 +144,7 @@ st.markdown("""
     
     /* Animación de carga personalizada */
     .stSpinner > div {
-        border-top-color: #667eea !important;
+        border-top-color: #f39c12 !important;
     }
     
     /* Mejorar texto general */
@@ -323,17 +323,18 @@ def render_professional_header():
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header con gradiente simple
+    # Header con gradiente amarillo elegante
     header_html = f"""
     <div style="
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(90deg, #f39c12 0%, #f1c40f 100%);
         padding: 25px;
         border-radius: 10px;
         margin-bottom: 25px;
         color: white;
         text-align: center;
+        box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
     ">
-        <h1 style="margin: 0; font-size: 36px; font-weight: 700;">
+        <h1 style="margin: 0; font-size: 36px; font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
             👥 CRM Profesional
         </h1>
         <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">
