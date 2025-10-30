@@ -2374,7 +2374,36 @@ with tab_dash:
             
             # SUB-TAB: ASESORES
             with sub_tab2:
-                asesor_counts = df_cli["asesor"].fillna("(Sin asesor)").value_counts()
+                # Para la sección de asesores del dashboard, usar datos filtrados EXCEPTO por asesor
+                # para mostrar todos los asesores (misma lógica que en tab_asesores)
+                try:
+                    # Aplicar filtros SIN incluir el filtro de asesor
+                    sucursal_for_filter = df_cli["sucursal"].fillna("").replace({"": "(Sin sucursal)"})
+                    fuente_for_filter = df_cli["fuente"].fillna("").replace({"": "(Sin fuente)"})
+                    
+                    # Aplicar solo filtros de sucursal, estatus y fuente (NO asesor)
+                    if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
+                        suc_mask_dash = pd.Series(True, index=df_cli.index)
+                    else:
+                        suc_mask_dash = sucursal_for_filter.isin(f_suc)
+
+                    if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
+                        est_mask_dash = pd.Series(True, index=df_cli.index)
+                    else:
+                        est_mask_dash = df_cli["estatus"].isin(f_est)
+
+                    if not f_fuente or len(f_fuente) == 0 or set(f_fuente) == set(FUENTE_ALL):
+                        fuente_mask_dash = pd.Series(True, index=df_cli.index)
+                    else:
+                        fuente_mask_dash = fuente_for_filter.isin(f_fuente)
+                    
+                    # Datos filtrados para asesores (sin filtro de asesor)
+                    df_asesor_dash = df_cli[suc_mask_dash & est_mask_dash & fuente_mask_dash]
+                except Exception:
+                    # Fallback: usar todos los datos
+                    df_asesor_dash = df_cli
+                
+                asesor_counts = df_asesor_dash["asesor"].fillna("(Sin asesor)").value_counts()
                 asesor_counts = asesor_counts[asesor_counts > 0]
                 
                 if asesor_counts.empty:
@@ -2392,7 +2421,9 @@ with tab_dash:
                     
                     asesor_df = asesor_final.reset_index()
                     asesor_df.columns = ["asesor", "cantidad"]
-                    asesor_df["porcentaje"] = (asesor_df["cantidad"] / total_clientes * 100).round(1)
+                    # Usar el total de clientes filtrados para calcular porcentajes
+                    total_filtrados = len(df_asesor_dash)
+                    asesor_df["porcentaje"] = (asesor_df["cantidad"] / total_filtrados * 100).round(1) if total_filtrados > 0 else 0
                     
                     col1, col2 = st.columns([1, 2])
                     
