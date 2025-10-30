@@ -2897,16 +2897,19 @@ with tab_asesores:
 
         if date_col is not None:
             try:
-                base_ases[date_col] = pd.to_datetime(base_ases[date_col], errors="coerce")
-                min_date = base_ases[date_col].min()
-                max_date = base_ases[date_col].max()
+                # CAMBIO: Usar fechas de TODOS los datos (_df_all), no solo los filtrados (base_ases)
+                _df_all[date_col] = pd.to_datetime(_df_all[date_col], errors="coerce")
+                min_date = _df_all[date_col].min()
+                max_date = _df_all[date_col].max()
                 if not pd.isna(min_date) and not pd.isna(max_date):
                     default_start = min_date.date()
                     default_end = max_date.date()
                     dr = st.date_input("Filtrar por fecha (desde → hasta)", value=(default_start, default_end), key="asesores_date_range")
                     start_date, end_date = dr if isinstance(dr, tuple) else (dr, dr)
                     if start_date and end_date:
-                        mask_date = pd.to_datetime(base_ases.get('ts', pd.Series(dtype='object')), errors='coerce').dt.date
+                        # Aplicar filtro de fecha sobre base_ases
+                        base_ases[date_col] = pd.to_datetime(base_ases[date_col], errors="coerce")
+                        mask_date = base_ases[date_col].dt.date
                         base_ases = base_ases[mask_date.between(start_date, end_date)]
                 else:
                     st.info("No hay valores de fecha válidos para filtrar en la base de asesores.")
