@@ -2822,11 +2822,27 @@ with tab_cli:
 # ===== Asesores (conteo + descarga Excel) =====
 with tab_asesores:
     st.subheader("👥 Dashboard por asesor")
+    
+    # Botón de debug para forzar recarga
+    col_debug, col_refresh = st.columns([3, 1])
+    with col_refresh:
+        if st.button("🔄 Forzar recarga desde Google Sheets", help="Recarga los datos directamente desde Google Sheets"):
+            # Limpiar cache de session_state relacionado con carga
+            for key in ['gs_load_msg_shown', 'gs_debug_shown']:
+                st.session_state.pop(key, None)
+            st.rerun()
+    
     # ---------- TAB: ASESORES ----------
     # Reconstruir la base desde disco y aplicar los filtros actuales del sidebar.
     # Esto asegura que la pestaña de Asesores siempre refleje asesores recién agregados.
     try:
         _df_all = cargar_y_corregir_clientes()  # Usar la función que carga datos frescos
+        
+        st.info(f"📊 Total de registros cargados: **{len(_df_all)}**")
+        if not _df_all.empty:
+            asesores_unicos = sorted(_df_all['asesor'].fillna('(Sin asesor)').unique().tolist())
+            st.info(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**")
+            
         # Preparar masks usando los mismos keys/valores del sidebar
         SUC_LABEL_EMPTY = "(Sin sucursal)"
         suc_for_all = _df_all["sucursal"].replace({"": SUC_LABEL_EMPTY})
@@ -2860,8 +2876,12 @@ with tab_asesores:
         # CAMBIO: En la pestaña de asesores, NO filtrar por asesor para mostrar todos los asesores
         # Solo aplicar filtros de sucursal, estatus y fuente
         base_ases = _df_all[suc_mask2 & est_mask2 & fuente_mask2].copy()  # Quitamos asesor_mask2
-    except Exception:
+        
+        st.info(f" Registros después de aplicar filtros: **{len(base_ases)}**")
+            
+    except Exception as e:
         # Fallback: usar df_ver si algo falla
+        st.error(f"❌ Error en pestaña asesores: {str(e)}")
         base_ases = df_ver.copy()
  
     # Si no hay datos tras filtros, informar y continuar (mostrar tarjetas vacías)
