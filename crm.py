@@ -12,183 +12,284 @@ from pathlib import Path
 
 # Configuración de página (DEBE SER LO PRIMERO)
 st.set_page_config(
-    page_title="CRM Profesional",
-    page_icon="👥",  # o usa tu logo: page_icon="./data/logo.png"
+    page_title="KAPITALIZA CRM",
+    page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
-        'Get Help': 'https://tuempresa.com/ayuda',
-        'Report a bug': 'https://tuempresa.com/soporte',
-        'About': '**CRM Profesional** v2.0 - Sistema de gestión de clientes'
+        'Get Help': 'https://kapitaliza.com/ayuda',
+        'Report a bug': 'https://kapitaliza.com/soporte',
+        'About': '**KAPITALIZA CRM** v3.0 - Sistema Integral de Gestión de Clientes'
     }
 )
 
-# CSS personalizado para look profesional
+# CSS personalizado para look profesional con paleta Kapitaliza
 st.markdown("""
 <style>
     /* Ocultar el menú de Streamlit y el footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Tema oscuro para toda la app */
+    /* Tema oscuro corporativo Kapitaliza */
     .stApp {
-        background-color: #1e1e1e;
-        color: #ffffff;
+        background-color: #1E1E1E;
+        color: #FFFFFF;
+        font-family: 'Inter', 'Roboto', sans-serif;
     }
     
     /* Estilo del header */
     .stApp header {
-        background-color: #2d2d2d;
-        border-bottom: 2px solid #404040;
+        background-color: #2A2A2A;
+        border-bottom: 2px solid #3C3C3C;
     }
     
-    /* Mejorar tabs con tema oscuro */
+    /* Mejorar tabs con tema Kapitaliza */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #2d2d2d;
+        background-color: #2A2A2A;
         padding: 10px;
         border-radius: 8px;
+        border: 1px solid #3C3C3C;
     }
     
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         padding: 0 24px;
-        background-color: #404040;
-        border-radius: 6px;
-        border: 1px solid #555555;
-        font-weight: 500;
-        color: #ffffff;
+        background-color: #3C3C3C;
+        border-radius: 8px;
+        border: 2px solid #3C3C3C;
+        font-weight: 600;
+        color: #BFBFBF;
+        transition: all 0.3s ease;
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #f39c12;
-        color: white;
-        border-color: #f39c12;
+        background-color: #FFD41D;
+        color: #1E1E1E;
+        border-color: #FFD41D;
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
     }
     
-    /* Mejorar métricas con tema oscuro */
+    /* Mejorar métricas con tema Kapitaliza */
     [data-testid="stMetricValue"] {
-        font-size: 28px;
-        font-weight: 600;
-        color: #ffffff;
+        font-size: 32px;
+        font-weight: 700;
+        color: #FFFFFF;
+        font-family: 'Poppins', sans-serif;
     }
     
     [data-testid="stMetricLabel"] {
-        color: #cccccc;
+        color: #BFBFBF;
+        font-weight: 600;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     
     [data-testid="stMetricDelta"] {
-        color: #aaaaaa;
-    }
-    
-    /* Mejorar dataframes */
-    .dataframe {
-        border: 1px solid #555555;
-        border-radius: 8px;
-        background-color: #2d2d2d;
-        color: #ffffff;
-    }
-    
-    /* Botones más profesionales */
-    .stButton > button {
-        border-radius: 6px;
+        color: #BFBFBF;
         font-weight: 500;
-        transition: all 0.3s;
-        background-color: #f39c12;
-        color: white;
+    }
+    
+    /* Cards para métricas corporativas */
+    div[data-testid="metric-container"] {
+        background-color: #2A2A2A;
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #3C3C3C;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        transition: transform 0.3s ease;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Dataframes corporativos */
+    .dataframe {
+        border: 2px solid #3C3C3C;
+        border-radius: 10px;
+        background-color: #2A2A2A;
+        color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Botones corporativos Kapitaliza */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        background-color: #FFD41D;
+        color: #1E1E1E;
         border: none;
+        padding: 10px 20px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.3);
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
-        background-color: #e67e22;
+        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.4);
+        background-color: #E6B800;
     }
     
-    /* Sidebar más elegante */
+    /* Sidebar corporativo */
     [data-testid="stSidebar"] {
-        background-color: #2d2d2d;
-        border-right: 1px solid #404040;
+        background-color: #2A2A2A;
+        border-right: 2px solid #3C3C3C;
     }
     
     [data-testid="stSidebar"] .css-1d391kg {
-        color: #ffffff;
+        color: #FFFFFF;
     }
     
-    /* Expanders más elegantes */
+    /* Expanders corporativos */
     .streamlit-expanderHeader {
-        background-color: #404040;
-        border-radius: 6px;
-        font-weight: 500;
-        color: #ffffff;
+        background-color: #3C3C3C;
+        border-radius: 8px;
+        font-weight: 600;
+        color: #FFFFFF;
+        border: 1px solid #3C3C3C;
     }
     
-    /* Inputs más profesionales */
+    .streamlit-expanderContent {
+        background-color: #2A2A2A;
+        border: 1px solid #3C3C3C;
+        border-radius: 0 0 8px 8px;
+    }
+    
+    /* Inputs corporativos */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stMultiSelect > div > div {
-        border-radius: 6px;
-        border: 1px solid #555555;
-        background-color: #404040;
-        color: #ffffff;
-    }
-    
-    /* Cards para métricas con tema oscuro */
-    div[data-testid="metric-container"] {
-        background-color: #2d2d2d;
-        padding: 15px;
         border-radius: 8px;
-        border: 1px solid #555555;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        border: 2px solid #3C3C3C;
+        background-color: #2A2A2A;
+        color: #FFFFFF;
+        font-weight: 500;
+        transition: border-color 0.3s ease;
     }
     
-    /* Animación de carga personalizada */
+    .stTextInput > div > div > input:focus,
+    .stSelectbox > div > div > select:focus {
+        border-color: #FFD41D;
+        box-shadow: 0 0 0 2px rgba(255, 212, 29, 0.2);
+    }
+    
+    /* Spinner corporativo */
     .stSpinner > div {
-        border-top-color: #f39c12 !important;
+        border-top-color: #FFD41D !important;
     }
     
-    /* Mejorar texto general */
-    .stMarkdown, .stText {
-        color: #ffffff;
-    }
-    
-    /* Subheaders */
+    /* Títulos y encabezados */
     h1, h2, h3 {
-        color: #ffffff;
+        color: #FFFFFF;
+        font-family: 'Poppins', sans-serif;
+        font-weight: 700;
     }
     
-    /* Info boxes */
-    .stAlert {
-        background-color: #404040;
-        border-color: #555555;
-        color: #ffffff;
+    h1 {
+        font-size: 2.5rem;
     }
     
-    /* Charts con fondo oscuro */
-    .stPlotlyChart {
-        background-color: #2d2d2d;
+    h2 {
+        font-size: 2rem;
     }
     
-    /* Selectbox dropdown */
+    h3 {
+        font-size: 1.5rem;
+    }
+    
+    /* Texto secundario */
+    .stMarkdown p, .stText {
+        color: #BFBFBF;
+        line-height: 1.6;
+    }
+    
+    /* Info boxes con colores corporativos */
+    .stAlert[data-baseweb="notification"] {
+        background-color: #2A2A2A;
+        border: 2px solid #3C3C3C;
+        border-radius: 8px;
+        color: #FFFFFF;
+    }
+    
+    /* Success (Verde suave) */
+    .stSuccess {
+        background-color: #2A2A2A;
+        border-left: 4px solid #4CAF50;
+        color: #FFFFFF;
+    }
+    
+    /* Error (Rojo profesional) */
+    .stError {
+        background-color: #2A2A2A;
+        border-left: 4px solid #D9534F;
+        color: #FFFFFF;
+    }
+    
+    /* Warning */
+    .stWarning {
+        background-color: #2A2A2A;
+        border-left: 4px solid #FFD41D;
+        color: #FFFFFF;
+    }
+    
+    /* Info */
+    .stInfo {
+        background-color: #2A2A2A;
+        border-left: 4px solid #3C3C3C;
+        color: #FFFFFF;
+    }
+    
+    /* Selectbox dropdown corporativo */
     .stSelectbox > div > div > div {
-        background-color: #404040;
-        color: #ffffff;
+        background-color: #2A2A2A;
+        color: #FFFFFF;
+        border: 1px solid #3C3C3C;
+        border-radius: 8px;
     }
     
-    /* Multiselect */
+    /* Multiselect corporativo */
     .stMultiSelect > div > div > div {
-        background-color: #404040;
-        color: #ffffff;
+        background-color: #2A2A2A;
+        color: #FFFFFF;
+        border: 1px solid #3C3C3C;
+        border-radius: 8px;
     }
     
     /* Radio buttons */
     .stRadio > div > label {
-        color: #ffffff;
+        color: #FFFFFF;
+        font-weight: 500;
     }
     
     /* Checkbox */
     .stCheckbox > label {
-        color: #ffffff;
+        color: #FFFFFF;
+        font-weight: 500;
+    }
+    
+    /* Toast messages */
+    .stToast {
+        background-color: #2A2A2A;
+        color: #FFFFFF;
+        border: 1px solid #3C3C3C;
+        border-radius: 8px;
+    }
+    
+    /* Progress bar */
+    .stProgress > div > div {
+        background-color: #FFD41D;
+    }
+    
+    /* Caption text */
+    .css-1v0mbdj {
+        color: #BFBFBF;
+        font-size: 12px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -252,24 +353,72 @@ def show_notification(message: str, type: str = "success"):
 
 # Funciones de feedback mejorado
 def show_success(message, duration=3):
-    """Muestra mensaje de éxito con auto-dismiss"""
+    """Muestra mensaje de éxito con colores corporativos Kapitaliza"""
     st.toast(f"✅ {message}", icon="✅")
-    st.success(message, icon="✅")
+    st.markdown(f"""
+    <div style="
+        background-color: #2A2A2A;
+        border-left: 4px solid #4CAF50;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    ">
+        <strong>✅ Éxito:</strong> {message}
+    </div>
+    """, unsafe_allow_html=True)
 
 def show_error(message):
-    """Muestra mensaje de error más visible"""
+    """Muestra mensaje de error con colores corporativos Kapitaliza"""
     st.toast(f"❌ {message}", icon="❌")
-    st.error(message, icon="🚫")
+    st.markdown(f"""
+    <div style="
+        background-color: #2A2A2A;
+        border-left: 4px solid #D9534F;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    ">
+        <strong>❌ Error:</strong> {message}
+    </div>
+    """, unsafe_allow_html=True)
 
 def show_warning(message):
-    """Muestra advertencia"""
+    """Muestra advertencia con colores corporativos Kapitaliza"""
     st.toast(f"⚠️ {message}", icon="⚠️")
-    st.warning(message, icon="⚠️")
+    st.markdown(f"""
+    <div style="
+        background-color: #2A2A2A;
+        border-left: 4px solid #FFD41D;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    ">
+        <strong>⚠️ Advertencia:</strong> {message}
+    </div>
+    """, unsafe_allow_html=True)
 
 def show_info(message):
-    """Muestra información"""
+    """Muestra información con colores corporativos Kapitaliza"""
     st.toast(f"ℹ️ {message}", icon="ℹ️")
-    st.info(message, icon="ℹ️")
+    st.markdown(f"""
+    <div style="
+        background-color: #2A2A2A;
+        border-left: 4px solid #3C3C3C;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        color: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    ">
+        <strong>ℹ️ Información:</strong> {message}
+    </div>
+    """, unsafe_allow_html=True)
 
 # Cards profesionales para KPIs
 def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊", color: str = "#0066cc"):
@@ -318,28 +467,57 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional simplificado"""
+    """Renderiza un header profesional corporativo con branding Kapitaliza"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header con gradiente amarillo elegante
+    # Header con gradiente amarillo corporativo Kapitaliza
     header_html = f"""
     <div style="
-        background: linear-gradient(90deg, #f39c12 0%, #f1c40f 100%);
+        background: linear-gradient(135deg, #FFD41D 0%, #E6B800 100%);
         padding: 25px;
         border-radius: 10px;
         margin-bottom: 25px;
-        color: white;
+        color: #1E1E1E;
         text-align: center;
-        box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
+        box-shadow: 0 4px 12px rgba(255, 212, 29, 0.3);
+        position: relative;
+        overflow: hidden;
     ">
-        <h1 style="margin: 0; font-size: 36px; font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-            👥 CRM Profesional
-        </h1>
-        <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">
-            Sistema de Gestión de Clientes | {user_name} | {current_time}
-        </p>
+        <div style="
+            background: rgba(0, 0, 0, 0.1);
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+        "></div>
+        
+        <div style="position: relative; z-index: 2;">
+            <h1 style="
+                margin: 0; 
+                font-size: 2.8rem; 
+                font-weight: 700; 
+                font-family: 'Poppins', sans-serif;
+                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+                letter-spacing: 1px;
+                color: #1E1E1E;
+            ">
+                🏢 KAPITALIZA CRM
+            </h1>
+            <p style="
+                margin: 10px 0 0 0; 
+                font-size: 1.1rem; 
+                font-weight: 600;
+                font-family: 'Inter', sans-serif;
+                opacity: 0.9;
+                color: #1E1E1E;
+            ">
+                Sistema Integral de Gestión de Clientes | {user_name} | {current_time}
+            </p>
+        </div>
     </div>
     """
     
