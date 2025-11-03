@@ -2374,6 +2374,11 @@ if is_admin():
         
         # === TAB SUCURSALES ===
         with tab_suc:
+            # Manejar reset de campo si está marcado
+            if st.session_state.get("reset_new_suc", False):
+                st.session_state["new_suc"] = ""
+                st.session_state["reset_new_suc"] = False
+            
             # Agregar nueva sucursal
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -2385,7 +2390,8 @@ if is_admin():
                             SUCURSALES.append(nueva_suc.strip())
                             save_sucursales(SUCURSALES)
                             st.toast(f"✅ Sucursal '{nueva_suc.strip()}' agregada")
-                            st.session_state["new_suc"] = ""
+                            # Marcar para reset en próximo rerun
+                            st.session_state["reset_new_suc"] = True
                             st.rerun()
                         else:
                             st.toast("⚠️ Sucursal ya existe")
@@ -2417,6 +2423,11 @@ if is_admin():
         
         # === TAB ASESORES ===
         with tab_ases:
+            # Manejar reset de campo si está marcado
+            if st.session_state.get("reset_new_asesor", False):
+                st.session_state["new_asesor"] = ""
+                st.session_state["reset_new_asesor"] = False
+            
             # Agregar nuevo asesor
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -2426,7 +2437,8 @@ if is_admin():
                     if nuevo_asesor.strip():
                         # Los asesores se manejan dinámicamente, pero podemos mantener una lista maestra
                         st.toast(f"✅ Asesor '{nuevo_asesor.strip()}' listo para usar")
-                        st.session_state["new_asesor"] = ""
+                        st.session_state["reset_new_asesor"] = True
+                        st.rerun()
                     else:
                         st.toast("⚠️ Nombre vacío")
             
@@ -2442,6 +2454,11 @@ if is_admin():
         
         # === TAB ESTATUS ===
         with tab_est:
+            # Manejar reset de campo si está marcado
+            if st.session_state.get("reset_new_estatus", False):
+                st.session_state["new_estatus"] = ""
+                st.session_state["reset_new_estatus"] = False
+            
             # Agregar nuevo estatus
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -2453,7 +2470,7 @@ if is_admin():
                             ESTATUS_OPCIONES.append(nuevo_estatus.strip())
                             save_estatus(ESTATUS_OPCIONES)
                             st.toast(f"✅ Estatus '{nuevo_estatus.strip()}' agregado")
-                            st.session_state["new_estatus"] = ""
+                            st.session_state["reset_new_estatus"] = True
                             st.rerun()
                         else:
                             st.toast("⚠️ Estatus ya existe")
@@ -2485,6 +2502,11 @@ if is_admin():
         
         # === TAB SEGUNDO ESTATUS ===
         with tab_seg:
+            # Manejar reset de campo si está marcado
+            if st.session_state.get("reset_new_seg_estatus", False):
+                st.session_state["new_seg_estatus"] = ""
+                st.session_state["reset_new_seg_estatus"] = False
+            
             # Agregar nuevo segundo estatus
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -2496,7 +2518,7 @@ if is_admin():
                             SEGUNDO_ESTATUS_OPCIONES.append(nuevo_seg_estatus.strip())
                             save_segundo_estatus(SEGUNDO_ESTATUS_OPCIONES)
                             st.toast(f"✅ 2° Estatus '{nuevo_seg_estatus.strip()}' agregado")
-                            st.session_state["new_seg_estatus"] = ""
+                            st.session_state["reset_new_seg_estatus"] = True
                             st.rerun()
                         else:
                             st.toast("⚠️ 2° Estatus ya existe")
