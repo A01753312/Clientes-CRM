@@ -742,6 +742,9 @@ def save_sucursales(lst: list):
     try:
         clean = [str(x).strip() for x in lst if str(x).strip()]
         SUCURSALES_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Limpiar cache relacionado
+        _cache_data.pop("sucursales", None)
+        _cache_timestamp.pop("sucursales", None)
     except Exception:
         pass
 
@@ -765,10 +768,40 @@ def load_estatus() -> list:
         pass
     return defaults
 
+# Cache simple para mejorar rendimiento
+_cache_data = {}
+_cache_timestamp = {}
+
+def get_cached_data(key: str, loader_func, cache_duration: int = 30):
+    """Cache simple con expiración en segundos"""
+    import time
+    now = time.time()
+    
+    # Verificar si el cache es válido
+    if (key in _cache_data and 
+        key in _cache_timestamp and 
+        (now - _cache_timestamp[key]) < cache_duration):
+        return _cache_data[key]
+    
+    # Cargar datos frescos
+    data = loader_func()
+    _cache_data[key] = data
+    _cache_timestamp[key] = now
+    return data
+
+def clear_cache():
+    """Limpiar todo el cache"""
+    global _cache_data, _cache_timestamp
+    _cache_data.clear()
+    _cache_timestamp.clear()
+
 def save_estatus(lst: list):
     try:
         clean = [str(x).strip() for x in lst if str(x).strip()]
         ESTATUS_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Limpiar cache relacionado
+        _cache_data.pop("estatus", None)
+        _cache_timestamp.pop("estatus", None)
     except Exception:
         pass
 
@@ -791,6 +824,9 @@ def save_segundo_estatus(lst: list):
     try:
         clean = [str(x).strip() for x in lst if (str(x).strip() or x == "")]
         SEGUNDO_ESTATUS_FILE.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Limpiar cache relacionado
+        _cache_data.pop("segundo_estatus", None)
+        _cache_timestamp.pop("segundo_estatus", None)
     except Exception:
         pass
 
@@ -2328,80 +2364,167 @@ if is_admin():
                     else:
                         st.write("")
 
-    # -- Gestión de sucursales (solo admin) -- (ahora en expander para ahorrar espacio)
+    # -- Gestión unificada (solo admin) -- (OPTIMIZADA)
     st.sidebar.markdown("---")
-    with st.sidebar.expander("Gestionar sucursales", expanded=False):
-        st.caption("Agregar o eliminar sucursales")
-        st.caption("Siempre dar doble click para confirmar.")
-
-        # Mostrar lista editable de sucursales y añadir nueva
-        suc_q = st.text_input("Nueva sucursal", key="admin_new_sucursal", placeholder="Ej. NUEVA_SUC")
-        if st.button("➕ Agregar sucursal", key="admin_add_sucursal"):
-            news = (st.session_state.get("admin_new_sucursal","") or "").strip()
-            if not news:
-                st.toast("Nombre vacío.", icon="🚫")
-            else:
-                # evitar duplicados (case-insensitive)
-                if any(s.casefold() == news.casefold() for s in SUCURSALES):
-                    st.toast("Esa sucursal ya existe.", icon="🚫")
-                else:
-                    SUCURSALES.append(news)
-                    save_sucursales(SUCURSALES)
-                    # usar toast global para feedback rápido
-                    st.toast(f"Sucursal '{news}' agregada.", icon="✅")
-                    # limpiar campo y forzar rerun para que el sidebar recargue
-                    st.session_state.pop("admin_new_sucursal", None)
-                    do_rerun()
-
-        # Listado con opción de eliminar (confirmación)
-        if SUCURSALES:
-            st.caption("Sucursales registradas")
-            for s in list(SUCURSALES):
-                c1, c2 = st.columns([3,1])
-                with c1:
-                    st.write(s)
-                with c2:
-                    del_key = f"del_suc_{s}"
-                    conf_key = f"del_suc_confirm_{s}"
-                    if not st.session_state.get(conf_key, False):
-                        if st.button("Eliminar", key=del_key):
-                            # activar confirmación
-                            st.session_state[conf_key] = True
-                            do_rerun()
-                    else:
-                        # verificar que no haya clientes usando esa sucursal
-                        in_use = False
-                        try:
-                            # cargar clientes y revisar columna 'sucursal'
-                            _df_check = cargar_clientes()
-                            if not _df_check.empty and 'sucursal' in _df_check.columns:
-                                in_use = any(_norm_key(str(x)) == _norm_key(s) for x in _df_check['sucursal'].fillna(""))
-                        except Exception:
-                            in_use = False
-
-                        if in_use:
-                            st.write("En uso")
-                            if st.button("Cancelar", key=f"cancel_del_suc_{s}"):
-                                st.session_state.pop(conf_key, None)
-                                do_rerun()
+    with st.sidebar.expander("⚙️ Gestión de Catálogos", expanded=False):
+        st.caption("Administrar sucursales, asesores, estatus y segundo estatus")
+        
+        # Tabs para organizar mejor la gestión
+        tab_suc, tab_ases, tab_est, tab_seg = st.tabs(["🏢 Sucursales", "👥 Asesores", "📊 Estatus", "📈 2° Estatus"])
+        
+        # === TAB SUCURSALES ===
+        with tab_suc:
+            # Agregar nueva sucursal
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                nueva_suc = st.text_input("Nueva sucursal:", key="new_suc", placeholder="Ej. CDMX_CENTRO")
+            with col2:
+                if st.button("➕", key="add_suc", help="Agregar sucursal"):
+                    if nueva_suc.strip():
+                        if nueva_suc.strip() not in SUCURSALES:
+                            SUCURSALES.append(nueva_suc.strip())
+                            save_sucursales(SUCURSALES)
+                            st.toast(f"✅ Sucursal '{nueva_suc.strip()}' agregada")
+                            st.session_state["new_suc"] = ""
+                            st.rerun()
                         else:
-                            # pedir confirmación final
-                            colc1, colc2 = st.columns([2,1])
-                            with colc1:
-                                if st.button("Confirmar eliminar", key=f"confirm_del_suc_{s}"):
-                                    try:
-                                        SUCURSALES.remove(s)
-                                        save_sucursales(SUCURSALES)
-                                        st.toast(f"Sucursal '{s}' eliminada.", icon="✅")
-                                    except Exception:
-                                        # no bloquear si falla
-                                        pass
-                                    st.session_state.pop(conf_key, None)
-                                    do_rerun()
-                            with colc2:
-                                if st.button("Cancelar", key=f"cancel_del_suc_{s}"):
-                                    st.session_state.pop(conf_key, None)
-                                    do_rerun()
+                            st.toast("⚠️ Sucursal ya existe")
+                    else:
+                        st.toast("⚠️ Nombre vacío")
+            
+            # Lista de sucursales existentes
+            if SUCURSALES:
+                st.caption(f"Sucursales ({len(SUCURSALES)}):")
+                for i, suc in enumerate(SUCURSALES):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"• {suc}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_suc_{i}", help=f"Eliminar {suc}"):
+                            # Verificar si está en uso
+                            df_check = cargar_clientes()
+                            en_uso = False
+                            if not df_check.empty and 'sucursal' in df_check.columns:
+                                en_uso = (df_check['sucursal'] == suc).any()
+                            
+                            if en_uso:
+                                st.toast(f"⚠️ '{suc}' está en uso por clientes")
+                            else:
+                                SUCURSALES.remove(suc)
+                                save_sucursales(SUCURSALES)
+                                st.toast(f"✅ Sucursal '{suc}' eliminada")
+                                st.rerun()
+        
+        # === TAB ASESORES ===
+        with tab_ases:
+            # Agregar nuevo asesor
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                nuevo_asesor = st.text_input("Nuevo asesor:", key="new_asesor", placeholder="Ej. Juan Pérez")
+            with col2:
+                if st.button("➕", key="add_asesor", help="Agregar asesor"):
+                    if nuevo_asesor.strip():
+                        # Los asesores se manejan dinámicamente, pero podemos mantener una lista maestra
+                        st.toast(f"✅ Asesor '{nuevo_asesor.strip()}' listo para usar")
+                        st.session_state["new_asesor"] = ""
+                    else:
+                        st.toast("⚠️ Nombre vacío")
+            
+            # Mostrar asesores existentes (desde la base de datos)
+            df_check = cargar_clientes()
+            if not df_check.empty and 'asesor' in df_check.columns:
+                asesores_existentes = df_check['asesor'].fillna("").unique()
+                asesores_existentes = [a for a in asesores_existentes if a.strip()]
+                if asesores_existentes:
+                    st.caption(f"Asesores en uso ({len(asesores_existentes)}):")
+                    for asesor in sorted(asesores_existentes):
+                        st.write(f"• {asesor}")
+        
+        # === TAB ESTATUS ===
+        with tab_est:
+            # Agregar nuevo estatus
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                nuevo_estatus = st.text_input("Nuevo estatus:", key="new_estatus", placeholder="Ej. EN_REVISION")
+            with col2:
+                if st.button("➕", key="add_estatus", help="Agregar estatus"):
+                    if nuevo_estatus.strip():
+                        if nuevo_estatus.strip() not in ESTATUS_OPCIONES:
+                            ESTATUS_OPCIONES.append(nuevo_estatus.strip())
+                            save_estatus(ESTATUS_OPCIONES)
+                            st.toast(f"✅ Estatus '{nuevo_estatus.strip()}' agregado")
+                            st.session_state["new_estatus"] = ""
+                            st.rerun()
+                        else:
+                            st.toast("⚠️ Estatus ya existe")
+                    else:
+                        st.toast("⚠️ Nombre vacío")
+            
+            # Lista de estatus existentes
+            if ESTATUS_OPCIONES:
+                st.caption(f"Estatus ({len(ESTATUS_OPCIONES)}):")
+                for i, est in enumerate(ESTATUS_OPCIONES):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"• {est}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_est_{i}", help=f"Eliminar {est}"):
+                            # Verificar si está en uso
+                            df_check = cargar_clientes()
+                            en_uso = False
+                            if not df_check.empty and 'estatus' in df_check.columns:
+                                en_uso = (df_check['estatus'] == est).any()
+                            
+                            if en_uso:
+                                st.toast(f"⚠️ '{est}' está en uso por clientes")
+                            else:
+                                ESTATUS_OPCIONES.remove(est)
+                                save_estatus(ESTATUS_OPCIONES)
+                                st.toast(f"✅ Estatus '{est}' eliminado")
+                                st.rerun()
+        
+        # === TAB SEGUNDO ESTATUS ===
+        with tab_seg:
+            # Agregar nuevo segundo estatus
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                nuevo_seg_estatus = st.text_input("Nuevo 2° estatus:", key="new_seg_estatus", placeholder="Ej. ALTA_PRIORIDAD")
+            with col2:
+                if st.button("➕", key="add_seg_estatus", help="Agregar segundo estatus"):
+                    if nuevo_seg_estatus.strip():
+                        if nuevo_seg_estatus.strip() not in SEGUNDO_ESTATUS_OPCIONES:
+                            SEGUNDO_ESTATUS_OPCIONES.append(nuevo_seg_estatus.strip())
+                            save_segundo_estatus(SEGUNDO_ESTATUS_OPCIONES)
+                            st.toast(f"✅ 2° Estatus '{nuevo_seg_estatus.strip()}' agregado")
+                            st.session_state["new_seg_estatus"] = ""
+                            st.rerun()
+                        else:
+                            st.toast("⚠️ 2° Estatus ya existe")
+                    else:
+                        st.toast("⚠️ Nombre vacío")
+            
+            # Lista de segundo estatus existentes
+            if SEGUNDO_ESTATUS_OPCIONES:
+                st.caption(f"2° Estatus ({len(SEGUNDO_ESTATUS_OPCIONES)}):")
+                for i, seg_est in enumerate(SEGUNDO_ESTATUS_OPCIONES):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"• {seg_est}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_seg_{i}", help=f"Eliminar {seg_est}"):
+                            # Verificar si está en uso
+                            df_check = cargar_clientes()
+                            en_uso = False
+                            if not df_check.empty and 'segundo_estatus' in df_check.columns:
+                                en_uso = (df_check['segundo_estatus'] == seg_est).any()
+                            
+                            if en_uso:
+                                st.toast(f"⚠️ '{seg_est}' está en uso por clientes")
+                            else:
+                                SEGUNDO_ESTATUS_OPCIONES.remove(seg_est)
+                                save_segundo_estatus(SEGUNDO_ESTATUS_OPCIONES)
+                                st.toast(f"✅ 2° Estatus '{seg_est}' eliminado")
+                                st.rerun()
 
 # ---------- Sidebar (filtros + acciones) ----------
 st.sidebar.title("👤 CRM")
