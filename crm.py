@@ -371,6 +371,23 @@ st.markdown("""
         color: #E6B800;
         font-weight: 700;
     }
+    
+    /* Botones pequeños y compactos */
+    .small-button button, .small-refresh-button button {
+        height: 2rem !important;
+        padding: 0.25rem 0.75rem !important;
+        font-size: 0.8rem !important;
+        font-weight: 500 !important;
+        min-height: auto !important;
+        border-radius: 6px !important;
+    }
+    
+    /* Contenedores de botones pequeños */
+    .small-button, .small-refresh-button {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -3410,9 +3427,12 @@ with tab_asesores:
                 st.caption("Refina tu búsqueda usando los filtros disponibles")
             with col_reset_btn:
                 st.write("")  # Espaciado
-                if st.button("🔄 Resetear", key="reset_ases_filters", use_container_width=True):
+                # Botón más pequeño y compacto
+                st.markdown('<div class="small-button">', unsafe_allow_html=True)
+                if st.button("🔄 Resetear", key="reset_ases_filters", use_container_width=False, help="Limpiar todos los filtros"):
                     st.session_state["_reset_ases_filters"] = True
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
             
             # Manejar reset si el flag está activo
             if st.session_state.get("_reset_ases_filters", False):
@@ -4241,10 +4261,13 @@ with tab_hist:
                 ACTION_LABELS = ["TODOS", "CLIENTE AGREGADO", "DESCARGA ZIP", "DESCARGA ZIP CLIENTE","DESCARGA ZIP ASESOR","DESCARGA DOCUMENTO", "DOCUMENTOS", "CLIENTE ELIMINADO", "ESTATUS MODIFICADO"]
                 qaction = st.selectbox("Acción", ACTION_LABELS, index=0)
             with cols_top[3]:
-                if st.button("Refrescar historial"):
+                # Botón más pequeño y compacto para refrescar historial
+                st.markdown('<div class="small-refresh-button">', unsafe_allow_html=True)
+                if st.button("🔄 Refrescar", key="refresh_historial", use_container_width=False, help="Actualizar historial"):
                     # actualizar token en session_state para forzar recarga del CSV sin usar do_rerun()
                     st.session_state["hist_reload_token"] = st.session_state.get("hist_reload_token", 0) + 1
                     # al modificar session_state un widget hace rerun automático, no necesitamos do_rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
             df_show = dfh.copy()
 
