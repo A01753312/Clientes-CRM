@@ -243,7 +243,7 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* Info boxes con tema claro */
+    /* Info boxes con tema claro mejorado */
     .stAlert[data-baseweb="notification"] {
         background-color: #FFFFFF;
         border: 2px solid #E2E8F0;
@@ -255,7 +255,7 @@ st.markdown("""
     /* Success (Verde suave) */
     .stSuccess {
         background-color: #F0FFF4;
-        border-left: 4px solid #4CAF50;
+        border: 2px solid #4CAF50;
         color: #22543D;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(76, 175, 80, 0.1);
@@ -264,7 +264,7 @@ st.markdown("""
     /* Error (Rojo profesional) */
     .stError {
         background-color: #FFF5F5;
-        border-left: 4px solid #D9534F;
+        border: 2px solid #D9534F;
         color: #742A2A;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(217, 83, 79, 0.1);
@@ -273,19 +273,21 @@ st.markdown("""
     /* Warning */
     .stWarning {
         background-color: #FFFBF0;
-        border-left: 4px solid #FFD41D;
+        border: 2px solid #FFD41D;
         color: #744210;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(255, 212, 29, 0.1);
     }
     
-    /* Info */
+    /* Info - Estilo especial para header */
     .stInfo {
         background-color: #F7FAFC;
-        border-left: 4px solid #4299E1;
-        color: #2B6CB0;
+        border: 2px solid #FFD41D;
+        color: #2D3748;
         border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(66, 153, 225, 0.1);
+        box-shadow: 0 2px 8px rgba(255, 212, 29, 0.1);
+        text-align: center;
+        font-weight: 500;
     }
     
     /* Selectbox dropdown corporativo */
@@ -497,66 +499,53 @@ def get_base64_image(image_path):
 
 # Header profesional simplificado
 def render_professional_header():
-    """Renderiza un header profesional con tema claro y elegante"""
+    """Renderiza un header profesional usando solo componentes nativos de Streamlit"""
     u = current_user()
     user_name = u.get('user') or u.get('email') if u else "Usuario"
     current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    # Header con tema claro profesional
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #FFFFFF 0%, #F7FAFC 100%);
-        border: 2px solid #FFD41D;
-        padding: 30px;
-        border-radius: 12px;
-        margin-bottom: 30px;
-        text-align: center;
-        box-shadow: 0 8px 25px rgba(255, 212, 29, 0.15);
-    ">
-        <h1 style="
-            color: #FFD41D; 
-            font-family: 'Poppins', sans-serif;
-            font-size: 2.8rem; 
-            font-weight: 700; 
-            letter-spacing: 3px;
-            margin: 0;
-            text-shadow: 0 2px 8px rgba(255, 212, 29, 0.2);
-        ">💼 KAPITALIZA</h1>
+    # Container principal para el header
+    with st.container():
+        # Crear columnas para centrar el contenido
+        col1, col2, col3 = st.columns([1, 4, 1])
         
-        <p style="
-            color: #2D3748; 
-            font-size: 1.1rem; 
-            margin: 15px 0 20px 0;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            font-weight: 600;
-            opacity: 0.9;
-        ">Customer Relationship Management</p>
+        with col2:
+            # Título principal con emoji
+            st.markdown("""
+            <div style="text-align: center; padding: 20px 0;">
+                <h1 style="
+                    color: #FFD41D; 
+                    font-size: 2.5rem; 
+                    font-weight: 700; 
+                    margin: 0;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                ">💼 KAPITALIZA</h1>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Subtítulo
+            st.markdown("""
+            <div style="text-align: center; margin-bottom: 20px;">
+                <p style="
+                    color: #2D3748; 
+                    font-size: 1rem; 
+                    font-weight: 600; 
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    margin: 0;
+                ">Customer Relationship Management</p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        <div style="
-            border-top: 2px solid #FFD41D;
-            padding-top: 20px;
-            margin-top: 20px;
-        ">
-            <p style="
-                color: #2D3748;
-                font-size: 1rem;
-                margin: 0;
-                font-weight: 600;
-            ">
-                Bienvenido, <span style="color: #E6B800; font-weight: 700;">{user_name}</span>
-            </p>
-            <p style="
-                color: #4A5568;
-                font-size: 0.9rem;
-                margin: 8px 0 0 0;
-                font-weight: 500;
-            ">
-                {current_time}
-            </p>
-        </div>
-    </div>
-    """.format(user_name=user_name, current_time=current_time), unsafe_allow_html=True)
+        # Separador visual nativo
+        st.divider()
+        
+        # Información de usuario usando componentes nativos
+        col_user1, col_user2, col_user3 = st.columns([2, 2, 2])
+        
+        with col_user2:
+            # Usar st.info para mostrar la información del usuario
+            st.info(f"👋 **Bienvenido, {user_name}**  \n📅 {current_time}", icon="ℹ️")
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
