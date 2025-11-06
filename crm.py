@@ -1102,8 +1102,16 @@ def crear_carpeta_cliente_drive(cliente_id, cliente_nombre=""):
     else:
         main_folder_id = results['files'][0]['id']
     
-    # Buscar carpeta del cliente
-    folder_name = f"{cliente_id} - {cliente_nombre}" if cliente_nombre else cliente_id
+    # Buscar carpeta del cliente - usar solo el nombre (sin ID)
+    if cliente_nombre:
+        # Limpiar el nombre para evitar problemas con caracteres especiales
+        import re
+        folder_name = re.sub(r'[<>:"/\\|?*]', '_', cliente_nombre.strip())
+        folder_name = folder_name[:100]  # Limitar longitud para evitar problemas
+    else:
+        folder_name = f"Cliente_{cliente_id}"
+    
+    # Buscar si ya existe una carpeta con este nombre
     query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{main_folder_id}' in parents and trashed=false"
     results = drive_service.files().list(q=query, fields="files(id, name)").execute()
     
