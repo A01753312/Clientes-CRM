@@ -26,6 +26,7 @@ st.set_page_config(
 # === AUTENTICACIÓN CON GOOGLE DRIVE ===
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+import json
 
 if "drive_creds" not in st.session_state:
     st.session_state.drive_creds = None
@@ -34,16 +35,22 @@ CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
 CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
 REDIRECT_URI = st.secrets["REDIRECT_URI"]
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file", 
-          "https://www.googleapis.com/auth/drive.metadata.readonly"]
+# Scopes actualizados según la documentación oficial de Google
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.metadata.readonly"
+]
 
 # Mostrar botón de conexión si aún no se ha autenticado
 if not st.session_state.drive_creds:
+    # Construir URL de autorización manualmente con scopes correctos
+    scope_string = "%20".join([scope.replace("https://www.googleapis.com/auth/", "") for scope in SCOPES])
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?response_type=code&client_id={CLIENT_ID}"
         f"&redirect_uri={REDIRECT_URI}"
-        f"&scope={' '.join(SCOPES)}&access_type=offline&prompt=consent"
+        f"&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.metadata.readonly"
+        f"&access_type=offline&prompt=consent"
     )
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📂 Conexión a Google Drive")
@@ -56,18 +63,24 @@ else:
 query_params = st.query_params
 if "code" in query_params:
     code = query_params["code"]
+    
+    # Configuración del cliente OAuth2 actualizada
+    client_config = {
+        "web": {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uris": [REDIRECT_URI],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+        }
+    }
+    
     flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "redirect_uris": [REDIRECT_URI],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
+        client_config,
+        scopes=SCOPES
     )
+    flow.redirect_uri = REDIRECT_URI
     flow.fetch_token(code=code)
     st.session_state.drive_creds = flow.credentials
     st.rerun()
