@@ -12,7 +12,7 @@ gspread-dataframe
 # --- Autenticación y visualización ---
 google-auth
 google-auth-oauthlib
-google-auth-httplib
+google-auth-httplib2
 google-api-python-client>=2.0.0
 
 # --- Para subir archivos a Drive (manejo de streams) ---
