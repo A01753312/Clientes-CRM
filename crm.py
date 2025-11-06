@@ -1886,7 +1886,7 @@ def _sheet_to_df(ws) -> pd.DataFrame:
     return dfsh.fillna("").astype(str)
 
 def guardar_clientes_gsheet_append(df_nuevo: pd.DataFrame):
-    """ Guarda clientes en modo append/upsert (sin sobrescribir todo) """
+    """Versión optimizada: solo actualiza filas modificadas"""
     if df_nuevo is None or df_nuevo.empty:
         return
 
@@ -1897,45 +1897,67 @@ def guardar_clientes_gsheet_append(df_nuevo: pd.DataFrame):
             
         df_nuevo = _ensure_columns(df_nuevo, COLUMNS)
 
-        # Asegurar que la primera fila de la hoja sea exactamente los encabezados esperados
+        # Asegurar encabezado
         try:
             header_row = ws.row_values(1)
-        except Exception:
-            header_row = []
-        # Normalizar strings de encabezado
-        header_norm = [str(h).strip() for h in header_row]
-        if header_norm[:len(COLUMNS)] != COLUMNS:
-            try:
+            header_norm = [str(h).strip() for h in header_row]
+            if header_norm[:len(COLUMNS)] != COLUMNS:
                 ws.update("A1", [COLUMNS])
-            except Exception:
-                pass
+        except Exception:
+            ws.update("A1", [COLUMNS])
 
         df_actual = _sheet_to_df(ws)
+        
+        # Si la hoja está vacía, usar set_with_dataframe (una sola vez)
         if df_actual.empty:
-            # Aseguramos encabezado y luego agregamos los datos
             try:
-                # actualizar encabezado (por si no existía)
-                ws.update("A1", [COLUMNS])
+                set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
             except Exception:
                 pass
-            rows = df_nuevo[COLUMNS].values.tolist()
-            if rows:
-                try:
-                    ws.append_rows(rows, value_input_option="RAW")
-                except Exception:
-                    # último recurso: set_with_dataframe para escribir todo
-                    try:
-                        set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
-                    except Exception:
-                        pass
             return
-
+        
         df_actual = _ensure_columns(df_actual, COLUMNS)
-        # Actualizar todo con set_with_dataframe (más simple y rápido)
-        try:
-            set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
-        except Exception:
-            pass
+
+        # Índices por ID para detección eficiente
+        idx_actual = {str(r["id"]): i for i, r in df_actual.reset_index(drop=True).iterrows() if str(r["id"]).strip() != ""}
+        idx_nuevo  = {str(r["id"]): i for i, r in df_nuevo.reset_index(drop=True).iterrows() if str(r["id"]).strip() != ""}
+
+        # 1) Nuevos: append en lote
+        nuevos_ids = [i for i in idx_nuevo.keys() if i not in idx_actual]
+        if nuevos_ids:
+            rows_to_append = df_nuevo.loc[df_nuevo["id"].astype(str).isin(nuevos_ids), COLUMNS].values.tolist()
+            try:
+                ws.append_rows(rows_to_append, value_input_option="RAW")
+            except Exception:
+                pass
+
+        # 2) Actualizados: batch update (más eficiente)
+        comunes_ids = [i for i in idx_nuevo.keys() if i in idx_actual]
+        if comunes_ids:
+            updates = []
+            for _id in comunes_ids:
+                row_new = df_nuevo.loc[idx_nuevo[_id], COLUMNS]
+                row_old = df_actual.loc[idx_actual[_id], COLUMNS]
+                if not row_new.equals(row_old):
+                    fila = idx_actual[_id] + 2  # +2 por encabezado (1-indexed)
+                    # Calcular letra de última columna (ej: P para 16 columnas)
+                    import string
+                    col_letter = string.ascii_uppercase[len(COLUMNS) - 1] if len(COLUMNS) <= 26 else 'Z'
+                    rango = f"A{fila}:{col_letter}{fila}"
+                    updates.append({
+                        "range": rango,
+                        "values": [row_new.tolist()]
+                    })
+
+            # Batch update (máximo 100 por lote para evitar límites de API)
+            if updates:
+                try:
+                    for i in range(0, len(updates), 100):
+                        batch = updates[i:i+100]
+                        ws.batch_update(batch, value_input_option="RAW")
+                except Exception:
+                    pass
+                    
     except Exception:
         pass
 
@@ -3023,10 +3045,23 @@ def _force_refresh():
         pass
 
 st.sidebar.button("🔁", key="btn_reset_filters", on_click=_reset_filters)
-if st.sidebar.button("🔄 Actualizar", key="btn_force_refresh", help="Actualiza datos y filtros para mostrar cambios recientes"):
-    # Llamar directamente sin callback para evitar el problema del no-op
-    _force_refresh()
-    st.rerun()
+
+# Botón actualizar mejorado con feedback visual
+col_refresh1, col_refresh2 = st.sidebar.columns([3, 1])
+with col_refresh1:
+    # Calcular tiempo desde última actualización
+    import time
+    cache_age = int(time.time() - _CLIENTES_CACHE_TIME) if _CLIENTES_CACHE_TIME > 0 else 0
+    if cache_age < 60:
+        st.sidebar.caption(f"Última actualización: hace {cache_age}s")
+    else:
+        st.sidebar.caption(f"Última actualización: hace {cache_age//60}m")
+with col_refresh2:
+    if st.sidebar.button("🔄", key="btn_force_refresh", help="Recargar todo desde Google Sheets"):
+        with st.spinner("Recargando datos..."):
+            _force_refresh()
+        st.toast("✅ Datos actualizados", icon="✅")
+        st.rerun()
 
 # Verificar si se solicitó actualización desde callback
 if st.session_state.get("_force_refresh_requested", False):
@@ -3035,16 +3070,13 @@ if st.session_state.get("_force_refresh_requested", False):
 
 # Aplicar filtros: si no hay selección o está vacía, NO filtrar (mostrar todo)
 try:
-    # DEBUG: Mostrar estado de filtros en desarrollo
-    st.sidebar.write(f"**Debug Info:**")
-    st.sidebar.write(f"- Total clientes en base: {len(df_cli)}")
-    st.sidebar.write(f"- Asesores disponibles: {len(ASES_ALL)}")
-    st.sidebar.write(f"- Asesores filtrados: {len(f_ases) if f_ases else 0}")
-    if f_ases and len(f_ases) < len(ASES_ALL):
-        st.sidebar.write(f"- Asesores seleccionados: {f_ases[:3]}{'...' if len(f_ases) > 3 else ''}")
-    # st.sidebar.write(f"DEBUG - f_suc: {len(f_suc) if f_suc else 0} de {len(SUC_ALL)}")
-    # st.sidebar.write(f"DEBUG - f_ases: {len(f_ases) if f_ases else 0} de {len(ASES_ALL)}")
-    # st.sidebar.write(f"DEBUG - f_est: {len(f_est) if f_est else 0} de {len(EST_ALL)}")
+    # Debug info comentado para optimización
+    # st.sidebar.write(f"**Debug Info:**")
+    # st.sidebar.write(f"- Total clientes en base: {len(df_cli)}")
+    # st.sidebar.write(f"- Asesores disponibles: {len(ASES_ALL)}")
+    # st.sidebar.write(f"- Asesores filtrados: {len(f_ases) if f_ases else 0}")
+    # if f_ases and len(f_ases) < len(ASES_ALL):
+    #     st.sidebar.write(f"- Asesores seleccionados: {f_ases[:3]}{'...' if len(f_ases) > 3 else ''}")
     
     # Sucursal: si está vacío o tiene todos, no filtrar
     if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
@@ -4823,102 +4855,120 @@ with tab_hist:
         st.warning("Solo los administradores pueden ver el historial.")
     else:
         st.subheader("🗂️ Historial de movimientos")
-        try:
-            # Verificar si se solicitó recarga forzada
-            force_reload = st.session_state.get("force_historial_reload", False)
-            if force_reload:
-                st.session_state["force_historial_reload"] = False
-            dfh = cargar_historial(force_reload=force_reload)
-        except Exception:
-            dfh = pd.DataFrame()
-
-        if dfh is None or dfh.empty:
-            st.info("No hay registros en el historial.")
-        else:
-            # asegurarnos de tener columna de timestamp como datetime para ordenar
-            try:
-                dfh["_ts_dt"] = pd.to_datetime(dfh["ts"], errors="coerce")
-                dfh = dfh.sort_values("_ts_dt", ascending=False)
-                dfh = dfh.drop(columns=["_ts_dt"])
-            except Exception:
-                pass
-
-            # Mostrar filtros simples
-            cols_top = st.columns([3,2,2,2])
-            with cols_top[0]:
-                qid = st.text_input("Filtrar por ID de cliente (parcial)")
-            with cols_top[1]:
-                qactor = st.selectbox("Actor", ["TODOS"] + sorted([str(x) for x in sorted(set(dfh.get("actor",[])))]) , index=0)
-            with cols_top[2]:
-                # Etiquetas amigables para las acciones
-                ACTION_LABELS = ["TODOS", "CLIENTE AGREGADO", "DESCARGA ZIP", "DESCARGA ZIP CLIENTE","DESCARGA ZIP ASESOR","DESCARGA DOCUMENTO", "DOCUMENTOS", "CLIENTE ELIMINADO", "ESTATUS MODIFICADO"]
-                qaction = st.selectbox("Acción", ACTION_LABELS, index=0)
-            with cols_top[3]:
-                # Botón más pequeño y compacto para refrescar historial
-                st.markdown('<div class="small-refresh-button">', unsafe_allow_html=True)
-                if st.button("🔄 Refrescar", key="refresh_historial", use_container_width=False, help="Actualizar historial desde Google Sheets"):
-                    # Forzar recarga del historial usando force_reload
+        
+        # Lazy loading: solo cargar cuando el usuario lo solicite
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if st.button("📂 Cargar Historial", key="load_hist", help="Cargar historial desde Google Sheets"):
+                st.session_state["hist_loaded"] = True
+        with col2:
+            if st.session_state.get("hist_loaded", False):
+                if st.button("🔄 Refrescar", key="refresh_hist_main", help="Actualizar historial"):
                     st.session_state["force_historial_reload"] = True
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            df_show = dfh.copy()
-
-            # --- Filtro por rango de fechas (columna 'ts') ---
+        
+        # Solo cargar y mostrar historial si está activado
+        if st.session_state.get("hist_loaded", False):
             try:
-                ts_all = pd.to_datetime(dfh.get('ts', pd.Series(dtype='object')), errors='coerce')
-                if not ts_all.dropna().empty:
-                    min_ts = ts_all.min()
-                    max_ts = ts_all.max()
-                    # rango por defecto: últimas 30 días o todo el rango si es menor
-                    default_end = max_ts.date()
-                    default_start = (max_ts - pd.Timedelta(days=30)).date() if (max_ts - pd.Timedelta(days=30)) > min_ts else min_ts.date()
-                    dr = st.date_input("Filtrar historial por fecha (desde → hasta)", value=(default_start, default_end), key="hist_date_range")
-                    start_date, end_date = (dr if isinstance(dr, tuple) else (dr, dr))
-                    if start_date and end_date:
-                        mask_dates = pd.to_datetime(df_show.get('ts', pd.Series(dtype='object')), errors='coerce').dt.date
-                        df_show = df_show[mask_dates.between(start_date, end_date)]
+                # Verificar si se solicitó recarga forzada
+                force_reload = st.session_state.get("force_historial_reload", False)
+                if force_reload:
+                    st.session_state["force_historial_reload"] = False
+                
+                with st.spinner("Cargando historial desde Google Sheets..."):
+                    dfh = cargar_historial(force_reload=force_reload)
             except Exception:
-                pass
-            if qid:
-                df_show = df_show[df_show["id"].astype(str).str.contains(qid, case=False, na=False)]
-            if qactor and qactor != "TODOS":
-                df_show = df_show[df_show["actor"].astype(str) == qactor]
-            if qaction and qaction != "TODOS":
-                qa = qaction
-                if qa == "CLIENTE AGREGADO":
-                    df_show = df_show[df_show["action"].astype(str) == "CLIENTE AGREGADO"]
-                elif qa == "CLIENTE ELIMINADO":
-                    df_show = df_show[df_show["action"].astype(str) == "CLIENTE ELIMINADO"]
-                elif qa == "ESTATUS MODIFICADO":
-                    df_show = df_show[df_show["action"].astype(str) == "ESTATUS MODIFICADO"]
-                elif qa == "DESCARGA ZIP":
-                    df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP"]
-                elif qa == "DESCARGA ZIP CLIENTE":
-                    df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP CLIENTE"]
-                elif qa == "DOCUMENTOS":
-                    df_show = df_show[df_show["action"].astype(str) == "DOCUMENTOS"]
-                elif qa == "DESCARGA ZIP ASESOR":
-                    df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP ASESOR"]
-                elif qa == "DESCARGA DOCUMENTO":
-                    df_show = df_show[df_show["action"].astype(str) == "DESCARGA DOCUMENTO"]
-                else:
-                    # OTROS: no filtrar por action; mostrar todo lo que no cae en las categorías anteriores
+                dfh = pd.DataFrame()
+
+            if dfh is None or dfh.empty:
+                st.info("No hay registros en el historial.")
+            else:
+                # asegurarnos de tener columna de timestamp como datetime para ordenar
+                try:
+                    dfh["_ts_dt"] = pd.to_datetime(dfh["ts"], errors="coerce")
+                    dfh = dfh.sort_values("_ts_dt", ascending=False)
+                    dfh = dfh.drop(columns=["_ts_dt"])
+                except Exception:
                     pass
 
-            st.dataframe(df_show.reset_index(drop=True), use_container_width=True, hide_index=True)
+                # Mostrar filtros simples
+                cols_top = st.columns([3,2,2,2])
+                with cols_top[0]:
+                    qid = st.text_input("Filtrar por ID de cliente (parcial)")
+                with cols_top[1]:
+                    qactor = st.selectbox("Actor", ["TODOS"] + sorted([str(x) for x in sorted(set(dfh.get("actor",[])))]) , index=0)
+                with cols_top[2]:
+                    # Etiquetas amigables para las acciones
+                    ACTION_LABELS = ["TODOS", "CLIENTE AGREGADO", "DESCARGA ZIP", "DESCARGA ZIP CLIENTE","DESCARGA ZIP ASESOR","DESCARGA DOCUMENTO", "DOCUMENTOS", "CLIENTE ELIMINADO", "ESTATUS MODIFICADO"]
+                    qaction = st.selectbox("Acción", ACTION_LABELS, index=0)
+                with cols_top[3]:
+                    # Botón más pequeño y compacto para refrescar historial
+                    st.markdown('<div class="small-refresh-button">', unsafe_allow_html=True)
+                    if st.button("🔄 Refrescar", key="refresh_historial", use_container_width=False, help="Actualizar historial desde Google Sheets"):
+                        # Forzar recarga del historial usando force_reload
+                        st.session_state["force_historial_reload"] = True
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-            try:
-                csv_bytes = df_show.to_csv(index=False, encoding="utf-8")
-                st.download_button("⬇️ Descargar historial filtrado (CSV)", data=csv_bytes, file_name="historial_filtrado.csv", mime="text/csv")
-            except Exception:
-                pass
-            if st.button("🗑️ Borrar historial"):
+                df_show = dfh.copy()
+
+                # --- Filtro por rango de fechas (columna 'ts') ---
                 try:
-                    # Crear un CSV vacío con las columnas correctas
-                    cols = ["id","nombre","estatus_old","estatus_new","segundo_old","segundo_new","observaciones","action","actor","ts"]
-                    pd.DataFrame(columns=cols).to_csv(HISTORIAL_CSV, index=False, encoding="utf-8")
-                    st.success("Historial eliminado correctamente.")
-                    do_rerun()
-                except Exception as e:
-                    st.error(f"Error al borrar historial: {e}")
+                    ts_all = pd.to_datetime(dfh.get('ts', pd.Series(dtype='object')), errors='coerce')
+                    if not ts_all.dropna().empty:
+                        min_ts = ts_all.min()
+                        max_ts = ts_all.max()
+                        # rango por defecto: últimas 30 días o todo el rango si es menor
+                        default_end = max_ts.date()
+                        default_start = (max_ts - pd.Timedelta(days=30)).date() if (max_ts - pd.Timedelta(days=30)) > min_ts else min_ts.date()
+                        dr = st.date_input("Filtrar historial por fecha (desde → hasta)", value=(default_start, default_end), key="hist_date_range")
+                        start_date, end_date = (dr if isinstance(dr, tuple) else (dr, dr))
+                        if start_date and end_date:
+                            mask_dates = pd.to_datetime(df_show.get('ts', pd.Series(dtype='object')), errors='coerce').dt.date
+                            df_show = df_show[mask_dates.between(start_date, end_date)]
+                except Exception:
+                    pass
+                if qid:
+                    df_show = df_show[df_show["id"].astype(str).str.contains(qid, case=False, na=False)]
+                if qactor and qactor != "TODOS":
+                    df_show = df_show[df_show["actor"].astype(str) == qactor]
+                if qaction and qaction != "TODOS":
+                    qa = qaction
+                    if qa == "CLIENTE AGREGADO":
+                        df_show = df_show[df_show["action"].astype(str) == "CLIENTE AGREGADO"]
+                    elif qa == "CLIENTE ELIMINADO":
+                        df_show = df_show[df_show["action"].astype(str) == "CLIENTE ELIMINADO"]
+                    elif qa == "ESTATUS MODIFICADO":
+                        df_show = df_show[df_show["action"].astype(str) == "ESTATUS MODIFICADO"]
+                    elif qa == "DESCARGA ZIP":
+                        df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP"]
+                    elif qa == "DESCARGA ZIP CLIENTE":
+                        df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP CLIENTE"]
+                    elif qa == "DOCUMENTOS":
+                        df_show = df_show[df_show["action"].astype(str) == "DOCUMENTOS"]
+                    elif qa == "DESCARGA ZIP ASESOR":
+                        df_show = df_show[df_show["action"].astype(str) == "DESCARGA ZIP ASESOR"]
+                    elif qa == "DESCARGA DOCUMENTO":
+                        df_show = df_show[df_show["action"].astype(str) == "DESCARGA DOCUMENTO"]
+                    else:
+                        # OTROS: no filtrar por action; mostrar todo lo que no cae en las categorías anteriores
+                        pass
+
+                st.dataframe(df_show.reset_index(drop=True), use_container_width=True, hide_index=True)
+
+                try:
+                    csv_bytes = df_show.to_csv(index=False, encoding="utf-8")
+                    st.download_button("⬇️ Descargar historial filtrado (CSV)", data=csv_bytes, file_name="historial_filtrado.csv", mime="text/csv")
+                except Exception:
+                    pass
+                if st.button("🗑️ Borrar historial"):
+                    try:
+                        # Crear un CSV vacío con las columnas correctas
+                        cols = ["id","nombre","estatus_old","estatus_new","segundo_old","segundo_new","observaciones","action","actor","ts"]
+                        pd.DataFrame(columns=cols).to_csv(HISTORIAL_CSV, index=False, encoding="utf-8")
+                        st.success("Historial eliminado correctamente.")
+                        do_rerun()
+                    except Exception as e:
+                        st.error(f"Error al borrar historial: {e}")
+        else:
+            st.info("👆 Haz clic en 'Cargar Historial' para ver los registros desde Google Sheets.")
