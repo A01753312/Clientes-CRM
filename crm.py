@@ -1185,10 +1185,13 @@ def subir_docs(cid: str, files, prefijo: str = "", usar_drive: bool = True) -> l
     if use_drive:
         try:
             df_clientes = cargar_clientes()
-            cliente_info = df_clientes[df_clientes['cliente_id'] == cid]
+            # La columna se llama 'id' no 'cliente_id'
+            cliente_info = df_clientes[df_clientes['id'] == cid]
             if not cliente_info.empty:
                 cliente_nombre = cliente_info.iloc[0]['nombre']
-        except:
+                st.info(f"🏷️ Creando carpeta para: {cliente_nombre}")
+        except Exception as e:
+            st.warning(f"⚠️ No se pudo obtener el nombre del cliente: {str(e)}")
             pass
     
     resultados = []
