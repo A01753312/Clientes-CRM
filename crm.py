@@ -2089,24 +2089,50 @@ def cargar_historial(force_reload: bool = False) -> pd.DataFrame:
                     # Google Sheets usa: ["fecha","accion","id","nombre","detalle","usuario"]
                     # Formato interno usa: ["id", "nombre", "estatus_old", "estatus_new", "segundo_old", "segundo_new", "observaciones", "action", "actor", "ts"]
                     
-                    if 'fecha' in dfh.columns and 'accion' in dfh.columns:
+                    if len(dfh) > 0 and ('fecha' in dfh.columns or 'accion' in dfh.columns):
                         # Crear DataFrame con formato interno
                         dfh_formatted = pd.DataFrame()
-                        dfh_formatted['id'] = dfh.get('id', '')
-                        dfh_formatted['nombre'] = dfh.get('nombre', '')
+                        dfh_formatted['id'] = dfh.get('id', '').astype(str)
+                        dfh_formatted['nombre'] = dfh.get('nombre', '').astype(str)
                         dfh_formatted['estatus_old'] = ''  # No se almacena separadamente en GSheets
                         dfh_formatted['estatus_new'] = ''  # No se almacena separadamente en GSheets  
                         dfh_formatted['segundo_old'] = ''  # No se almacena separadamente en GSheets
                         dfh_formatted['segundo_new'] = ''  # No se almacena separadamente en GSheets
-                        dfh_formatted['observaciones'] = dfh.get('detalle', '')
-                        dfh_formatted['action'] = dfh.get('accion', '')
-                        dfh_formatted['actor'] = dfh.get('usuario', '')
-                        dfh_formatted['ts'] = dfh.get('fecha', '')
+                        dfh_formatted['observaciones'] = dfh.get('detalle', '').astype(str)
+                        dfh_formatted['action'] = dfh.get('accion', '').astype(str)
+                        dfh_formatted['actor'] = dfh.get('usuario', '').astype(str)
+                        dfh_formatted['ts'] = dfh.get('fecha', '').astype(str)
+                        
+                        # Corregir problemas de encoding común en Google Sheets
+                        for col in ['nombre', 'observaciones', 'actor']:
+                            if col in dfh_formatted.columns:
+                                # Corregir caracteres con tilde
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã©', 'é', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã¡', 'á', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã­', 'í', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã³', 'ó', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ãº', 'ú', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã±', 'ñ', regex=False)
+                                # Corregir mayúsculas
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã', 'Á', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã‰', 'É', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ã"', 'Ó', regex=False)
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('Ãš', 'Ú', regex=False)
+                                # Ñ mayúscula usando código unicode
+                                dfh_formatted[col] = dfh_formatted[col].str.replace('\u00c3\u0091', 'Ñ', regex=False)
                         
                         # Asegurar todas las columnas requeridas
                         for c in cols:
                             if c not in dfh_formatted.columns:
                                 dfh_formatted[c] = ""
+                        
+                        # Ordenar por timestamp de manera descendente (más reciente primero)
+                        try:
+                            dfh_formatted['_ts_sort'] = pd.to_datetime(dfh_formatted['ts'], errors='coerce')
+                            dfh_formatted = dfh_formatted.sort_values('_ts_sort', ascending=False)
+                            dfh_formatted = dfh_formatted.drop(columns=['_ts_sort'])
+                        except Exception:
+                            pass
                         
                         # Actualizar caché
                         result = dfh_formatted[cols].copy()
