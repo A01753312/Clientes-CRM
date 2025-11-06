@@ -736,6 +736,13 @@ _GS_GC = None
 _GS_SH = None
 _GS_WS_CACHE: dict = {}
 
+# Variables globales para caché de worksheets con timestamp
+_GS_WS_CACHE_TIME = {}
+
+# Variables globales para caché de clientes
+_CLIENTES_CACHE = None
+_CLIENTES_CACHE_TIME = 0
+
 def _gs_credentials():
     """Carga credenciales desde Streamlit secrets - Versión mejorada para Streamlit Cloud"""
     global _GS_CREDS
@@ -785,14 +792,21 @@ def _gs_credentials():
         st.error(f"❌ Error en autenticación Google Sheets: {str(e)}")
         return None
 
-def _gs_open_worksheet(tab_name: str):
-    """Versión silenciosa: Abre una pestaña, pero no muestra mensajes en la UI después del primer render.
-    Devuelve None en caso de cualquier problema (silencioso)."""
-    global _GS_GC, _GS_SH, _GS_WS_CACHE
+def _gs_open_worksheet(tab_name: str, force_reload: bool = False):
+    """Versión con caché temporal para evitar recargas innecesarias"""
+    global _GS_GC, _GS_SH, _GS_WS_CACHE, _GS_WS_CACHE_TIME
+    
+    # Verificar si el caché es reciente (menos de 5 segundos)
+    import time
+    now = time.time()
+    cache_duration = 5  # segundos
+    
+    if not force_reload and tab_name in _GS_WS_CACHE:
+        if tab_name in _GS_WS_CACHE_TIME:
+            if (now - _GS_WS_CACHE_TIME[tab_name]) < cache_duration:
+                return _GS_WS_CACHE[tab_name]
+    
     try:
-        if tab_name in _GS_WS_CACHE:
-            return _GS_WS_CACHE[tab_name]
-
         creds = _gs_credentials()
         if creds is None:
             return None
@@ -803,7 +817,6 @@ def _gs_open_worksheet(tab_name: str):
         if _GS_SH is None:
             try:
                 _GS_SH = _GS_GC.open_by_key(GSHEET_ID)
-                # silencioso: no mostrar mensajes en UI
             except Exception:
                 return None
 
@@ -811,9 +824,9 @@ def _gs_open_worksheet(tab_name: str):
             ws = _GS_SH.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
             ws = _GS_SH.add_worksheet(title=tab_name, rows="5000", cols="50")
-            # silencioso: no mostrar información al usuario
 
         _GS_WS_CACHE[tab_name] = ws
+        _GS_WS_CACHE_TIME[tab_name] = now
         return ws
         
     except Exception:
@@ -821,15 +834,18 @@ def _gs_open_worksheet(tab_name: str):
 
 def limpiar_cache_gsheets():
     """Limpia todos los cachés de Google Sheets para forzar recarga de datos."""
-    global _GS_GC, _GS_SH, _GS_WS_CACHE
+    global _GS_GC, _GS_SH, _GS_WS_CACHE, _CLIENTES_CACHE, _CLIENTES_CACHE_TIME, _GS_WS_CACHE_TIME
     _GS_WS_CACHE.clear()
+    _GS_WS_CACHE_TIME.clear()
     _GS_GC = None
     _GS_SH = None
-    # También limpiar caché de Streamlit
+    _CLIENTES_CACHE = None
+    _CLIENTES_CACHE_TIME = 0
     st.cache_data.clear()
-    # Limpiar flags de session_state relacionados con la carga
     if 'gs_load_msg_shown' in st.session_state:
         del st.session_state['gs_load_msg_shown']
+    if 'gs_first_load' in st.session_state:
+        del st.session_state['gs_first_load']
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
@@ -1720,10 +1736,22 @@ COLUMNS = [
     "score","telefono","correo","analista","fuente"
 ]
 
-def cargar_clientes() -> pd.DataFrame:
+def cargar_clientes(force_reload: bool = False) -> pd.DataFrame:
     """
-    Lee primero de Google Sheets (prioridad), luego de archivos locales
+    Lee primero de Google Sheets con caché inteligente
+    force_reload: True para forzar recarga desde Google Sheets
     """
+    global _CLIENTES_CACHE, _CLIENTES_CACHE_TIME
+    
+    import time
+    now = time.time()
+    cache_duration = 3  # segundos
+    
+    # Usar caché si es reciente y no se fuerza recarga
+    if not force_reload and _CLIENTES_CACHE is not None:
+        if (now - _CLIENTES_CACHE_TIME) < cache_duration:
+            return _CLIENTES_CACHE.copy()
+    
     def _ensure_cols(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy().fillna("")
         for c in COLUMNS:
@@ -1731,56 +1759,69 @@ def cargar_clientes() -> pd.DataFrame:
                 df[c] = ""
         return df[[c for c in COLUMNS if c in df.columns]]
 
-    # 1) PRIMERO intentar Google Sheets (si está habilitado)
+    # 1) Intentar Google Sheets
     if USE_GSHEETS:
         try:
-            ws = _gs_open_worksheet(GSHEET_TAB)
+            ws = _gs_open_worksheet(GSHEET_TAB, force_reload=force_reload)
             if ws is None:
-                st.warning("No se pudo conectar a Google Sheets, usando datos locales")
                 raise Exception("No connection")
                 
             df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
             if df is None or df.empty:
                 df = pd.DataFrame(columns=COLUMNS)
             else:
-                # Mostrar mensaje solo la primera vez por sesión
-                show_once_success("gsheets_load", f"Datos cargados desde Google Sheets: {len(df)} registros")
+                # Mostrar mensaje solo al iniciar sesión
+                if 'gs_first_load' not in st.session_state:
+                    st.session_state['gs_first_load'] = True
+                    show_once_success("gsheets_load", f"Datos cargados desde Google Sheets: {len(df)} registros")
                 
             df = df.fillna("")
             for c in COLUMNS:
                 if c not in df.columns:
                     df[c] = ""
-            return df[COLUMNS].astype(str).fillna("")
+            
+            result = df[COLUMNS].astype(str).fillna("")
+            
+            # Actualizar caché
+            _CLIENTES_CACHE = result.copy()
+            _CLIENTES_CACHE_TIME = now
+            
+            return result
         except Exception as e:
-            st.warning(f"⚠️ No se pudo cargar desde Google Sheets: {str(e)}")
+            if 'gs_first_load' not in st.session_state:
+                st.warning(f"⚠️ No se pudo cargar desde Google Sheets, usando datos locales")
 
     # 2) Fallback a archivos locales
     try:
         if CLIENTES_XLSX.exists():
             df = pd.read_excel(CLIENTES_XLSX, dtype=str).fillna("")
-            return _ensure_cols(df)
+            result = _ensure_cols(df)
+            _CLIENTES_CACHE = result.copy()
+            _CLIENTES_CACHE_TIME = now
+            return result
     except Exception:
         pass
 
     try:
         if CLIENTES_CSV.exists():
             df = pd.read_csv(CLIENTES_CSV, dtype=str).fillna("")
-            return _ensure_cols(df)
+            result = _ensure_cols(df)
+            _CLIENTES_CACHE = result.copy()
+            _CLIENTES_CACHE_TIME = now
+            return result
     except Exception:
         pass
 
     return pd.DataFrame(columns=COLUMNS)
 
 def guardar_clientes(df: pd.DataFrame):
-    """
-    Guarda la base en CSV y XLSX (respaldo). Evita NaNs y asegura columnas.
-    """
-    # Guardado local y opcional a Google Sheets (append/upsert)
+    """Guarda la base y actualiza caché"""
+    global _CLIENTES_CACHE, _CLIENTES_CACHE_TIME
+    
     try:
         if df is None:
             return
 
-        # asegurar columnas y tipo
         for c in COLUMNS:
             if c not in df.columns:
                 df[c] = ""
@@ -1793,11 +1834,11 @@ def guardar_clientes(df: pd.DataFrame):
         try:
             engine = None
             try:
-                import xlsxwriter  # noqa
+                import xlsxwriter
                 engine = "xlsxwriter"
             except Exception:
                 try:
-                    import openpyxl  # noqa
+                    import openpyxl
                     engine = "openpyxl"
                 except Exception:
                     engine = None
@@ -1808,77 +1849,116 @@ def guardar_clientes(df: pd.DataFrame):
         except Exception:
             pass
 
-        # --- Helpers para GSheet append/upsert ---
-        def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-            df = df.copy().fillna("")
-            for c in cols:
-                if c not in df.columns:
-                    df[c] = ""
-            return df[cols].astype(str).fillna("")
+        # Actualizar caché inmediatamente
+        import time
+        _CLIENTES_CACHE = df_to_save.copy()
+        _CLIENTES_CACHE_TIME = time.time()
 
-        def _sheet_to_df(ws) -> pd.DataFrame:
-            dfsh = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
-            if dfsh is None or dfsh.empty:
-                return pd.DataFrame()
-            return dfsh.fillna("").astype(str)
-
-        def guardar_clientes_gsheet_append(df_nuevo: pd.DataFrame):
-            """ Guarda clientes en modo append/upsert (sin sobrescribir todo) """
-            if df_nuevo is None or df_nuevo.empty:
-                return
-
-            ws = _gs_open_worksheet(GSHEET_TAB)
-            df_nuevo = _ensure_columns(df_nuevo, COLUMNS)
-
-            # Asegurar que la primera fila de la hoja sea exactamente los encabezados esperados
+        # Google Sheets (async, sin bloquear)
+        if USE_GSHEETS:
             try:
-                header_row = ws.row_values(1)
+                guardar_clientes_gsheet_append(df_to_save)
             except Exception:
-                header_row = []
-            # Normalizar strings de encabezado
-            header_norm = [str(h).strip() for h in header_row]
-            if header_norm[:len(COLUMNS)] != COLUMNS:
-                try:
-                    ws.update("A1", [COLUMNS])
-                except Exception:
-                    pass
+                pass
 
-            df_actual = _sheet_to_df(ws)
-            if df_actual.empty:
-                # Aseguramos encabezado y luego agregamos los datos
+    except Exception as e:
+        try:
+            st.error(f"Error guardando clientes: {e}")
+        except Exception:
+            pass
+
+# --- Helpers para GSheet append/upsert ---
+def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    df = df.copy().fillna("")
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[cols].astype(str).fillna("")
+
+def _sheet_to_df(ws) -> pd.DataFrame:
+    dfsh = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
+    if dfsh is None or dfsh.empty:
+        return pd.DataFrame()
+    return dfsh.fillna("").astype(str)
+
+def guardar_clientes_gsheet_append(df_nuevo: pd.DataFrame):
+    """ Guarda clientes en modo append/upsert (sin sobrescribir todo) """
+    if df_nuevo is None or df_nuevo.empty:
+        return
+
+    try:
+        ws = _gs_open_worksheet(GSHEET_TAB)
+        if ws is None:
+            return
+            
+        df_nuevo = _ensure_columns(df_nuevo, COLUMNS)
+
+        # Asegurar que la primera fila de la hoja sea exactamente los encabezados esperados
+        try:
+            header_row = ws.row_values(1)
+        except Exception:
+            header_row = []
+        # Normalizar strings de encabezado
+        header_norm = [str(h).strip() for h in header_row]
+        if header_norm[:len(COLUMNS)] != COLUMNS:
+            try:
+                ws.update("A1", [COLUMNS])
+            except Exception:
+                pass
+
+        df_actual = _sheet_to_df(ws)
+        if df_actual.empty:
+            # Aseguramos encabezado y luego agregamos los datos
+            try:
+                # actualizar encabezado (por si no existía)
+                ws.update("A1", [COLUMNS])
+            except Exception:
+                pass
+            rows = df_nuevo[COLUMNS].values.tolist()
+            if rows:
                 try:
-                    # actualizar encabezado (por si no existía)
-                    ws.update("A1", [COLUMNS])
+                    ws.append_rows(rows, value_input_option="RAW")
                 except Exception:
-                    pass
-                rows = df_nuevo[COLUMNS].values.tolist()
-                if rows:
+                    # último recurso: set_with_dataframe para escribir todo
                     try:
-                        ws.append_rows(rows, value_input_option="RAW")
+                        set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
                     except Exception:
-                        # último recurso: set_with_dataframe para escribir todo
-                        try:
-                            set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
-                        except Exception:
-                            pass
-                return
-                return
+                        pass
+            return
 
-            df_actual = _ensure_columns(df_actual, COLUMNS)
+        df_actual = _ensure_columns(df_actual, COLUMNS)
+        # Actualizar todo con set_with_dataframe (más simple y rápido)
+        try:
+            set_with_dataframe(ws, df_nuevo, include_index=False, include_column_header=True, resize=True)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
-            # Índices por ID
-            idx_actual = {str(r["id"]): i for i, r in df_actual.reset_index(drop=True).iterrows() if str(r["id"]).strip() != ""}
-            idx_nuevo  = {str(r["id"]): i for i, r in df_nuevo.reset_index(drop=True).iterrows() if str(r["id"]).strip() != ""}
+# Función cargar_y_corregir_clientes optimizada
+# Función cargar_y_corregir_clientes optimizada
+def cargar_y_corregir_clientes(force_reload: bool = False) -> pd.DataFrame:
+    """Carga los clientes y corrige IDs duplicados/vacíos si es necesario"""
+    df_cli = cargar_clientes(force_reload=force_reload)
+    
+    try:
+        df_fixed = _fix_missing_or_duplicate_ids(df_cli)
+        try:
+            changed = not df_fixed.equals(df_cli)
+        except Exception:
+            changed = True
+        if changed:
+            df_cli = df_fixed
+            guardar_clientes(df_cli)
+        else:
+            df_cli = df_fixed
+    except Exception:
+        pass
+    
+    return df_cli
 
-            nuevos_ids = [i for i in idx_nuevo.keys() if i not in idx_actual]
-            comunes_ids = [i for i in idx_nuevo.keys() if i in idx_actual]
-
-            # 1) Agrega los nuevos
-            if nuevos_ids:
-                rows_to_append = df_nuevo.loc[df_nuevo["id"].astype(str).isin(nuevos_ids), COLUMNS].values.tolist()
-                ws.append_rows(rows_to_append, value_input_option="RAW")
-
-            # 2) Actualiza los existentes (si cambian)
+# Función para arreglar IDs duplicados/vacíos
+def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
             updates = []
             for _id in comunes_ids:
                 row_new = df_nuevo.loc[idx_nuevo[_id], COLUMNS]
@@ -3792,16 +3872,16 @@ with tab_asesores:
     try:
         _df_all = cargar_y_corregir_clientes()  # Usar la función que carga datos frescos
         
-        # Mostrar información como toasts temporales
-        st.toast(f"📊 Total de registros cargados: **{len(_df_all)}**", icon="📊")
+        # ELIMINAR toasts molestos:
+        # st.toast(f"📊 Total de registros cargados: **{len(_df_all)}**", icon="📊")
         if not _df_all.empty:
             asesores_unicos = sorted(_df_all['asesor'].fillna('(Sin asesor)').unique().tolist())
-            st.toast(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**", icon="👥")
+            # st.toast(f"👥 Asesores únicos encontrados: **{', '.join(asesores_unicos)}**", icon="👥")
             
         # CAMBIO: NO aplicar ningún filtro del sidebar - mostrar todos los clientes
         base_ases = _df_all.copy()
         
-        st.toast(f"✅ Mostrando TODOS los registros (sin filtros): **{len(base_ases)}**", icon="✅")
+        # st.toast(f"✅ Mostrando TODOS los registros (sin filtros): **{len(base_ases)}**", icon="✅")
             
     except Exception as e:
         # Fallback: usar df_cli completo si algo falla
@@ -3975,11 +4055,11 @@ with tab_asesores:
             # Aplicar todos los filtros (individual de asesor tiene prioridad)
             base_ases = base_ases[suc_mask_ases & asesor_mask_ases & asesor_individual_mask & est_mask_ases & fuente_mask_ases].copy()
             
-            # Mostrar información de resultados
+            # Mostrar información de resultados (eliminar mensaje molesto)
             if asesor_individual and asesor_individual != "(Todos)":
                 st.info(f"🎯 Mostrando solo: **{asesor_individual}** - **{len(base_ases)}** registros")
-            else:
-                st.info(f"📋 Registros después de filtros: **{len(base_ases)}** de **{len(_df_all)}** totales")
+            # else:
+                # ELIMINAR: st.info(f"📋 Registros después de filtros: **{len(base_ases)}** de **{len(_df_all)}** totales")
         
         except Exception as e:
             st.warning(f"Error aplicando filtros: {e}")
