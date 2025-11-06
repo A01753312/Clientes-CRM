@@ -104,20 +104,24 @@ if "code" in query_params and not st.session_state.drive_creds:
             
             # Limpiar el código de la URL para evitar reprocessing
             st.query_params.clear()
-            show_once_success("drive_auth", "Autenticación exitosa con Google Drive")
+            # Usar función simple sin dependencias
+            if f"shown_drive_auth" not in st.session_state:
+                st.success("✅ Autenticación exitosa con Google Drive")
+                st.session_state[f"shown_drive_auth"] = True
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Error en la autenticación: {str(e)}")
+            # Quitar mensajes molestos antes del login
+            # st.error(f"❌ Error en la autenticación: {str(e)}")
             # Limpiar el código problemático
             st.query_params.clear()
             st.session_state.processed_auth_code = None
-            st.sidebar.error("Error de autenticación. Intenta conectar nuevamente.")
+            # st.sidebar.error("Error de autenticación. Intenta conectar nuevamente.")
 
-# Si hay un error en la URL, mostrarlo
+# Si hay un error en la URL, limpiar silenciosamente
 if "error" in query_params:
     error = query_params["error"]
-    st.sidebar.error(f"❌ Error de autorización: {error}")
+    # Quitar mensaje molesto: st.sidebar.error(f"❌ Error de autorización: {error}")
     st.query_params.clear()
 
 # CSS personalizado para look profesional con tema claro Kapitaliza
