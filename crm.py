@@ -57,33 +57,67 @@ if not st.session_state.drive_creds:
     st.sidebar.markdown(f"[🔐 Conectar con Google Drive]({auth_url})")
 
 else:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📂 Google Drive")
     st.sidebar.success("✅ Conectado a Google Drive")
+    
+    # Botón para desconectar Google Drive
+    if st.sidebar.button("🔌 Desconectar Drive", help="Cerrar sesión de Google Drive"):
+        st.session_state.drive_creds = None
+        if "processed_auth_code" in st.session_state:
+            del st.session_state.processed_auth_code
+        st.query_params.clear()
+        st.sidebar.success("Google Drive desconectado")
+        st.rerun()
 
 # Procesar el parámetro de autorización devuelto por Google
 query_params = st.query_params
-if "code" in query_params:
+if "code" in query_params and not st.session_state.drive_creds:
     code = query_params["code"]
     
-    # Configuración del cliente OAuth2 actualizada
-    client_config = {
-        "web": {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "redirect_uris": [REDIRECT_URI],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
-        }
-    }
-    
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=SCOPES
-    )
-    flow.redirect_uri = REDIRECT_URI
-    flow.fetch_token(code=code)
-    st.session_state.drive_creds = flow.credentials
-    st.rerun()
+    # Solo procesar si no hemos procesado este código antes
+    if "processed_auth_code" not in st.session_state or st.session_state.processed_auth_code != code:
+        try:
+            # Configuración del cliente OAuth2 actualizada
+            client_config = {
+                "web": {
+                    "client_id": CLIENT_ID,
+                    "client_secret": CLIENT_SECRET,
+                    "redirect_uris": [REDIRECT_URI],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+                }
+            }
+            
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES
+            )
+            flow.redirect_uri = REDIRECT_URI
+            flow.fetch_token(code=code)
+            
+            # Guardar credenciales y marcar el código como procesado
+            st.session_state.drive_creds = flow.credentials
+            st.session_state.processed_auth_code = code
+            
+            # Limpiar el código de la URL para evitar reprocessing
+            st.query_params.clear()
+            st.success("✅ Autenticación exitosa con Google Drive")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"❌ Error en la autenticación: {str(e)}")
+            # Limpiar el código problemático
+            st.query_params.clear()
+            st.session_state.processed_auth_code = None
+            st.sidebar.error("Error de autenticación. Intenta conectar nuevamente.")
+
+# Si hay un error en la URL, mostrarlo
+if "error" in query_params:
+    error = query_params["error"]
+    st.sidebar.error(f"❌ Error de autorización: {error}")
+    st.query_params.clear()
 
 # CSS personalizado para look profesional con tema claro Kapitaliza
 st.markdown("""
