@@ -743,6 +743,10 @@ _GS_WS_CACHE_TIME = {}
 _CLIENTES_CACHE = None
 _CLIENTES_CACHE_TIME = 0
 
+# Variables globales para caché de historial
+_HISTORIAL_CACHE = None
+_HISTORIAL_CACHE_TIME = 0
+
 def _gs_credentials():
     """Carga credenciales desde Streamlit secrets - Versión mejorada para Streamlit Cloud"""
     global _GS_CREDS
@@ -2052,22 +2056,86 @@ def append_historial_gsheet(evento: dict):
 # ---------- Historial y eliminación de clientes ----------
 HISTORIAL_CSV = DATA_DIR / "historial.csv"
 
-def cargar_historial() -> pd.DataFrame:
+def cargar_historial(force_reload: bool = False) -> pd.DataFrame:
     """
-    Lee el CSV de historial si existe; retorna DataFrame vacío con columnas esperadas si no.
+    Lee el historial desde Google Sheets (prioritario) o CSV local como respaldo.
+    Usa caché inteligente para evitar cargas repetitivas.
+    Retorna DataFrame con columnas esperadas si no existe.
     """
-    # añadimos 'action' y 'actor' para saber quién hizo el cambio y qué tipo fue
+    global _HISTORIAL_CACHE, _HISTORIAL_CACHE_TIME
+    
+    # Verificar caché (3-5 segundos de duración)
+    import time
+    now = time.time()
+    cache_duration = 4  # segundos
+    
+    if not force_reload and _HISTORIAL_CACHE is not None and (now - _HISTORIAL_CACHE_TIME) < cache_duration:
+        return _HISTORIAL_CACHE.copy()
+    
+    # Columnas estándar del historial
     cols = ["id", "nombre", "estatus_old", "estatus_new", "segundo_old", "segundo_new", "observaciones", "action", "actor", "ts"]
+    
+    # Intentar cargar desde Google Sheets primero
+    if USE_GSHEETS:
+        try:
+            ws = _gs_open_worksheet(GSHEET_HISTTAB)
+            if ws:
+                # Obtener todos los datos de la hoja
+                data = ws.get_all_records()
+                if data:
+                    dfh = pd.DataFrame(data).fillna("").astype(str)
+                    
+                    # Mapear columnas de Google Sheets a formato interno
+                    # Google Sheets usa: ["fecha","accion","id","nombre","detalle","usuario"]
+                    # Formato interno usa: ["id", "nombre", "estatus_old", "estatus_new", "segundo_old", "segundo_new", "observaciones", "action", "actor", "ts"]
+                    
+                    if 'fecha' in dfh.columns and 'accion' in dfh.columns:
+                        # Crear DataFrame con formato interno
+                        dfh_formatted = pd.DataFrame()
+                        dfh_formatted['id'] = dfh.get('id', '')
+                        dfh_formatted['nombre'] = dfh.get('nombre', '')
+                        dfh_formatted['estatus_old'] = ''  # No se almacena separadamente en GSheets
+                        dfh_formatted['estatus_new'] = ''  # No se almacena separadamente en GSheets  
+                        dfh_formatted['segundo_old'] = ''  # No se almacena separadamente en GSheets
+                        dfh_formatted['segundo_new'] = ''  # No se almacena separadamente en GSheets
+                        dfh_formatted['observaciones'] = dfh.get('detalle', '')
+                        dfh_formatted['action'] = dfh.get('accion', '')
+                        dfh_formatted['actor'] = dfh.get('usuario', '')
+                        dfh_formatted['ts'] = dfh.get('fecha', '')
+                        
+                        # Asegurar todas las columnas requeridas
+                        for c in cols:
+                            if c not in dfh_formatted.columns:
+                                dfh_formatted[c] = ""
+                        
+                        # Actualizar caché
+                        result = dfh_formatted[cols].copy()
+                        _HISTORIAL_CACHE = result.copy()
+                        _HISTORIAL_CACHE_TIME = now
+                        return result
+        except Exception:
+            pass  # Si falla Google Sheets, usar CSV local
+    
+    # Respaldo: cargar desde CSV local
     try:
         if HISTORIAL_CSV.exists():
             dfh = pd.read_csv(HISTORIAL_CSV, dtype=str).fillna("")
             for c in cols:
                 if c not in dfh.columns:
                     dfh[c] = ""
-            return dfh[cols].copy()
+            result = dfh[cols].copy()
+            # Actualizar caché también para CSV
+            _HISTORIAL_CACHE = result.copy()
+            _HISTORIAL_CACHE_TIME = now
+            return result
     except Exception:
         pass
-    return pd.DataFrame(columns=cols)
+    
+    # Si todo falla, retornar DataFrame vacío
+    result = pd.DataFrame(columns=cols)
+    _HISTORIAL_CACHE = result.copy()
+    _HISTORIAL_CACHE_TIME = now
+    return result
 
 def append_historial_gsheet(evento: dict):
     """
@@ -2914,11 +2982,13 @@ def _reset_filters():
 
 def _force_refresh():
     """Fuerza actualización de caché y filtros para mostrar nuevos datos"""
-    global _CLIENTES_CACHE, _CLIENTES_CACHE_TIME
+    global _CLIENTES_CACHE, _CLIENTES_CACHE_TIME, _HISTORIAL_CACHE, _HISTORIAL_CACHE_TIME
     try:
-        # Limpiar caché de clientes
+        # Limpiar caché de clientes y historial
         _CLIENTES_CACHE = None
         _CLIENTES_CACHE_TIME = 0
+        _HISTORIAL_CACHE = None
+        _HISTORIAL_CACHE_TIME = 0
         # Reset filtros también
         _reset_filters()
         # Marcar que se necesita actualizar (sin llamar st.rerun() en callback)
@@ -4728,7 +4798,11 @@ with tab_hist:
     else:
         st.subheader("🗂️ Historial de movimientos")
         try:
-            dfh = cargar_historial()
+            # Verificar si se solicitó recarga forzada
+            force_reload = st.session_state.get("force_historial_reload", False)
+            if force_reload:
+                st.session_state["force_historial_reload"] = False
+            dfh = cargar_historial(force_reload=force_reload)
         except Exception:
             dfh = pd.DataFrame()
 
@@ -4756,10 +4830,10 @@ with tab_hist:
             with cols_top[3]:
                 # Botón más pequeño y compacto para refrescar historial
                 st.markdown('<div class="small-refresh-button">', unsafe_allow_html=True)
-                if st.button("🔄 Refrescar", key="refresh_historial", use_container_width=False, help="Actualizar historial"):
-                    # actualizar token en session_state para forzar recarga del CSV sin usar do_rerun()
-                    st.session_state["hist_reload_token"] = st.session_state.get("hist_reload_token", 0) + 1
-                    # al modificar session_state un widget hace rerun automático, no necesitamos do_rerun()
+                if st.button("🔄 Refrescar", key="refresh_historial", use_container_width=False, help="Actualizar historial desde Google Sheets"):
+                    # Forzar recarga del historial usando force_reload
+                    st.session_state["force_historial_reload"] = True
+                    st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
             df_show = dfh.copy()
