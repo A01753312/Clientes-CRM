@@ -1,11 +1,26 @@
+#--- base del entorno---
 streamlit
 pandas
 numpy
 python-dateutil
+# --- Manejo de archivos y hojas de cálculo ---
 openpyxl
 xlsxwriter
 gspread
 gspread-dataframe
+
+# --- Autenticación y visualización ---
 google-auth
-altair
+google-auth-oauthlib
+google-auth-httplib
 google-api-python-client>=2.0.0
+
+# --- Para subir archivos a Drive (manejo de streams) ---
+httplib2
+requests
+
+# --- Visualizaciones ---
+altair
+
+# --- Producción en Streamlit Cloud ---
+protobuf==4.25.1

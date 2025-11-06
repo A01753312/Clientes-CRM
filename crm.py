@@ -23,6 +23,55 @@ st.set_page_config(
     }
 )
 
+# === AUTENTICACIÓN CON GOOGLE DRIVE ===
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+
+if "drive_creds" not in st.session_state:
+    st.session_state.drive_creds = None
+
+CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
+CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+REDIRECT_URI = st.secrets["REDIRECT_URI"]
+
+SCOPES = ["https://www.googleapis.com/auth/drive.file", 
+          "https://www.googleapis.com/auth/drive.metadata.readonly"]
+
+# Mostrar botón de conexión si aún no se ha autenticado
+if not st.session_state.drive_creds:
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?response_type=code&client_id={CLIENT_ID}"
+        f"&redirect_uri={REDIRECT_URI}"
+        f"&scope={' '.join(SCOPES)}&access_type=offline&prompt=consent"
+    )
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📂 Conexión a Google Drive")
+    st.sidebar.markdown(f"[🔐 Conectar con Google Drive]({auth_url})")
+
+else:
+    st.sidebar.success("✅ Conectado a Google Drive")
+
+# Procesar el parámetro de autorización devuelto por Google
+query_params = st.query_params
+if "code" in query_params:
+    code = query_params["code"]
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "redirect_uris": [REDIRECT_URI],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        },
+        scopes=SCOPES,
+    )
+    flow.fetch_token(code=code)
+    st.session_state.drive_creds = flow.credentials
+    st.rerun()
+
 # CSS personalizado para look profesional con tema claro Kapitaliza
 st.markdown("""
 <style>
@@ -978,6 +1027,22 @@ def canonicalize_from_catalog(
         return best
 
     return s
+
+
+from googleapiclient.http import MediaIoBaseUpload
+import io
+
+def subir_a_drive(uploaded_file):
+    """Sube un archivo a Google Drive y devuelve el enlace público."""
+    if not st.session_state.drive_creds:
+        st.warning("⚠ Conecta tu cuenta de Google Drive primero.")
+        return None
+
+    drive_service = build("drive", "v3", credentials=st.session_state.drive_creds)
+    file_metadata = {"name": uploaded_file.name}
+    media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getbuffer()), mimetype=uploaded_file.type)
+    file = drive_service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+    return file.get("webViewLink")
 
 
 def subir_docs(cid: str, files, prefijo: str = "") -> list:
