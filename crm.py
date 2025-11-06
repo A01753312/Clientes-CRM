@@ -2921,12 +2921,21 @@ def _force_refresh():
         _CLIENTES_CACHE_TIME = 0
         # Reset filtros también
         _reset_filters()
-        st.rerun()
+        # Marcar que se necesita actualizar (sin llamar st.rerun() en callback)
+        st.session_state["_force_refresh_requested"] = True
     except Exception:
         pass
 
 st.sidebar.button("🔁", key="btn_reset_filters", on_click=_reset_filters)
-st.sidebar.button("🔄 Actualizar", key="btn_force_refresh", on_click=_force_refresh, help="Actualiza datos y filtros para mostrar cambios recientes")
+if st.sidebar.button("🔄 Actualizar", key="btn_force_refresh", help="Actualiza datos y filtros para mostrar cambios recientes"):
+    # Llamar directamente sin callback para evitar el problema del no-op
+    _force_refresh()
+    st.rerun()
+
+# Verificar si se solicitó actualización desde callback
+if st.session_state.get("_force_refresh_requested", False):
+    st.session_state["_force_refresh_requested"] = False
+    st.rerun()
 
 # Aplicar filtros: si no hay selección o está vacía, NO filtrar (mostrar todo)
 try:
