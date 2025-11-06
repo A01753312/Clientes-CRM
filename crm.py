@@ -104,7 +104,7 @@ if "code" in query_params and not st.session_state.drive_creds:
             
             # Limpiar el código de la URL para evitar reprocessing
             st.query_params.clear()
-            st.success("✅ Autenticación exitosa con Google Drive")
+            show_once_success("drive_auth", "Autenticación exitosa con Google Drive")
             st.rerun()
             
         except Exception as e:
@@ -566,6 +566,32 @@ def show_info(message):
     st.toast(f"ℹ️ {message}", icon="ℹ️")
     st.info(f"ℹ️ {message}")
 
+# Función para mostrar mensajes solo una vez por sesión
+def show_once(message_key: str, message_func, *args, **kwargs):
+    """
+    Muestra un mensaje solo una vez por sesión.
+    
+    Args:
+        message_key: Clave única para identificar el mensaje
+        message_func: Función de Streamlit para mostrar el mensaje (st.success, st.info, etc.)
+        *args, **kwargs: Argumentos para la función de mensaje
+    """
+    if f"shown_{message_key}" not in st.session_state:
+        message_func(*args, **kwargs)
+        st.session_state[f"shown_{message_key}"] = True
+
+def show_once_success(message_key: str, message: str):
+    """Muestra mensaje de éxito solo una vez por sesión"""
+    show_once(message_key, st.success, f"✅ {message}")
+
+def show_once_info(message_key: str, message: str):
+    """Muestra mensaje de información solo una vez por sesión"""
+    show_once(message_key, st.info, f"ℹ️ {message}")
+
+def show_once_warning(message_key: str, message: str):
+    """Muestra mensaje de advertencia solo una vez por sesión"""
+    show_once(message_key, st.warning, f"⚠️ {message}")
+
 # Cards profesionales para KPIs
 def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊", color: str = "#0066cc"):
     """Renderiza una tarjeta KPI profesional"""
@@ -658,8 +684,8 @@ def render_professional_header():
         col_user1, col_user2, col_user3 = st.columns([2, 2, 2])
         
         with col_user2:
-            # Usar st.info para mostrar la información del usuario
-            st.info(f"👋 **Bienvenido, {user_name}**  \n📅 {current_time}", icon="ℹ️")
+            # Mostrar bienvenida solo la primera vez por sesión
+            show_once_info("welcome", f"👋 **Bienvenido, {user_name}**  \n📅 {current_time}")
 
 def run_with_progress(func, steps: list, *args, **kwargs):
     """Ejecuta función con barra de progreso"""
@@ -1197,8 +1223,11 @@ def subir_docs(cid: str, files, prefijo: str = "", usar_drive: bool = True) -> l
     resultados = []
     
     if use_drive:
-        # Subir a Google Drive
-        st.info("📤 Subiendo documentos a Google Drive...")
+        # Subir a Google Drive - mostrar mensaje solo la primera vez
+        show_once_info("drive_upload", "Subiendo documentos a Google Drive...")
+        exitosos = 0
+        errores = 0
+        
         for f in files_iter:
             try:
                 fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
@@ -1214,11 +1243,17 @@ def subir_docs(cid: str, files, prefijo: str = "", usar_drive: bool = True) -> l
                 drive_link = subir_a_drive(temp_file, cid, cliente_nombre)
                 if drive_link:
                     resultados.append(f"[Drive] {target_name}: {drive_link}")
-                    st.success(f"✅ {target_name} subido a Google Drive")
+                    exitosos += 1
                 else:
-                    st.error(f"❌ Error subiendo {target_name} a Google Drive")
+                    errores += 1
             except Exception as e:
-                st.error(f"❌ Error con {fname}: {str(e)}")
+                errores += 1
+                
+        # Mostrar resumen al final
+        if exitosos > 0:
+            st.success(f"✅ {exitosos} documento(s) subido(s) a Google Drive")
+        if errores > 0:
+            st.error(f"❌ {errores} documento(s) con errores")
     else:
         # Guardar localmente (método original)
         folder = carpeta_docs_cliente(cid)
@@ -1704,22 +1739,8 @@ def cargar_clientes() -> pd.DataFrame:
             if df is None or df.empty:
                 df = pd.DataFrame(columns=COLUMNS)
             else:
-                # Mensaje temporal: mostrar solo la primera vez por sesión
-                try:
-                    if not st.session_state.get('gs_load_msg_shown', False):
-                        try:
-                            st.toast(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
-                        except Exception:
-                            # Fallback seguro si st.toast no existe
-                            st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
-                        st.session_state['gs_load_msg_shown'] = True
-                except Exception:
-                    # No romper si session_state no está disponible
-                    try:
-                        st.success(f"✅ Datos cargados desde Google Sheets: {len(df)} registros")
-                    except Exception:
-                        pass
-                
+                # Mostrar mensaje solo la primera vez por sesión
+                show_once_success("gsheets_load", f"Datos cargados desde Google Sheets: {len(df)} registros")
                 
             df = df.fillna("")
             for c in COLUMNS:
