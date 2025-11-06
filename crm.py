@@ -4085,10 +4085,18 @@ with tab_asesores:
                     
                     with col_f1:
                         st.markdown("##### 🏢 Sucursales")
+                        # Validar que los valores por defecto existan en las opciones
+                        default_suc = st.session_state.get("ases_filter_suc", SUC_ASES_ALL)
+                        # Filtrar solo valores que realmente existen en SUC_ASES_ALL
+                        valid_default_suc = [x for x in default_suc if x in SUC_ASES_ALL] if isinstance(default_suc, list) else SUC_ASES_ALL
+                        # Si no hay valores válidos, usar todos
+                        if not valid_default_suc:
+                            valid_default_suc = SUC_ASES_ALL
+                            
                         f_ases_suc = st.multiselect(
                             "Filtrar por sucursales",
                             SUC_ASES_ALL,
-                            default=st.session_state.get("ases_filter_suc", SUC_ASES_ALL),
+                            default=valid_default_suc,
                             key="ases_filter_suc",
                             label_visibility="collapsed",
                             help="Selecciona una o más sucursales"
@@ -4097,10 +4105,16 @@ with tab_asesores:
                     
                     with col_f2:
                         st.markdown("##### 👥 Asesores")
+                        # Validar que los valores por defecto existan en las opciones
+                        default_asesor = st.session_state.get("ases_filter_asesor", ASES_ASES_ALL)
+                        valid_default_asesor = [x for x in default_asesor if x in ASES_ASES_ALL] if isinstance(default_asesor, list) else ASES_ASES_ALL
+                        if not valid_default_asesor:
+                            valid_default_asesor = ASES_ASES_ALL
+                            
                         f_ases_asesor = st.multiselect(
                             "Filtrar por asesores",
                             ASES_ASES_ALL,
-                            default=st.session_state.get("ases_filter_asesor", ASES_ASES_ALL),
+                            default=valid_default_asesor,
                             key="ases_filter_asesor",
                             label_visibility="collapsed",
                             help="Selecciona uno o más asesores"
@@ -4112,10 +4126,16 @@ with tab_asesores:
                     
                     with col_f3:
                         st.markdown("##### 📊 Estatus")
+                        # Validar que los valores por defecto existan en las opciones
+                        default_est = st.session_state.get("ases_filter_est", EST_ASES_ALL)
+                        valid_default_est = [x for x in default_est if x in EST_ASES_ALL] if isinstance(default_est, list) else EST_ASES_ALL
+                        if not valid_default_est:
+                            valid_default_est = EST_ASES_ALL
+                            
                         f_ases_est = st.multiselect(
                             "Filtrar por estatus",
                             EST_ASES_ALL,
-                            default=st.session_state.get("ases_filter_est", EST_ASES_ALL),
+                            default=valid_default_est,
                             key="ases_filter_est",
                             label_visibility="collapsed",
                             help="Selecciona uno o más estatus"
@@ -4124,10 +4144,16 @@ with tab_asesores:
                     
                     with col_f4:
                         st.markdown("##### 📢 Fuentes")
+                        # Validar que los valores por defecto existan en las opciones
+                        default_fuente = st.session_state.get("ases_filter_fuente", FUENTE_ASES_ALL)
+                        valid_default_fuente = [x for x in default_fuente if x in FUENTE_ASES_ALL] if isinstance(default_fuente, list) else FUENTE_ASES_ALL
+                        if not valid_default_fuente:
+                            valid_default_fuente = FUENTE_ASES_ALL
+                            
                         f_ases_fuente = st.multiselect(
                             "Filtrar por fuentes",
                             FUENTE_ASES_ALL,
-                            default=st.session_state.get("ases_filter_fuente", FUENTE_ASES_ALL),
+                            default=valid_default_fuente,
                             key="ases_filter_fuente",
                             label_visibility="collapsed",
                             help="Selecciona una o más fuentes de captación"
