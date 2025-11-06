@@ -26,6 +26,7 @@ st.set_page_config(
 # === AUTENTICACIÓN CON GOOGLE DRIVE ===
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 import json
 
 if "drive_creds" not in st.session_state:
@@ -1079,101 +1080,201 @@ def canonicalize_from_catalog(
 from googleapiclient.http import MediaIoBaseUpload
 import io
 
-def subir_a_drive(uploaded_file):
-    """Sube un archivo a Google Drive y devuelve el enlace público."""
+def crear_carpeta_cliente_drive(cliente_id, cliente_nombre=""):
+    """Crea o encuentra la carpeta del cliente en Google Drive."""
+    if not st.session_state.drive_creds:
+        return None
+    
+    drive_service = build("drive", "v3", credentials=st.session_state.drive_creds)
+    
+    # Buscar carpeta principal "CRM Kapitaliza"
+    query = "name='CRM Kapitaliza' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    
+    if not results.get('files'):
+        # Crear carpeta principal
+        folder_metadata = {
+            'name': 'CRM Kapitaliza',
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        main_folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+        main_folder_id = main_folder.get('id')
+    else:
+        main_folder_id = results['files'][0]['id']
+    
+    # Buscar carpeta del cliente
+    folder_name = f"{cliente_id} - {cliente_nombre}" if cliente_nombre else cliente_id
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{main_folder_id}' in parents and trashed=false"
+    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    
+    if not results.get('files'):
+        # Crear carpeta del cliente
+        folder_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [main_folder_id]
+        }
+        client_folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+        return client_folder.get('id')
+    else:
+        return results['files'][0]['id']
+
+def subir_a_drive(uploaded_file, cliente_id=None, cliente_nombre=""):
+    """Sube un archivo a Google Drive en la carpeta del cliente y devuelve el enlace público."""
     if not st.session_state.drive_creds:
         st.warning("⚠ Conecta tu cuenta de Google Drive primero.")
         return None
 
     drive_service = build("drive", "v3", credentials=st.session_state.drive_creds)
+    
+    # Si se especifica cliente, subir a su carpeta
+    parent_folder_id = None
+    if cliente_id:
+        parent_folder_id = crear_carpeta_cliente_drive(cliente_id, cliente_nombre)
+    
     file_metadata = {"name": uploaded_file.name}
+    if parent_folder_id:
+        file_metadata["parents"] = [parent_folder_id]
+    
     media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getbuffer()), mimetype=uploaded_file.type)
     file = drive_service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+    
+    # Hacer el archivo público para visualización
+    try:
+        permission = {
+            'type': 'anyone',
+            'role': 'reader'
+        }
+        drive_service.permissions().create(fileId=file.get('id'), body=permission).execute()
+    except:
+        pass  # Si no se puede hacer público, continuar
+    
     return file.get("webViewLink")
 
 
-def subir_docs(cid: str, files, prefijo: str = "") -> list:
+def subir_docs(cid: str, files, prefijo: str = "", usar_drive: bool = True) -> list:
     """
     Guarda una lista de archivos subidos por Streamlit en la carpeta del cliente.
+    Si usar_drive=True y hay credenciales de Drive, sube a Google Drive.
+    Sino, guarda localmente como antes.
     `files` puede ser una lista de UploadedFile o similar; cada objeto debe exponer `.name` y `.read()` / `.getbuffer()`.
     `prefijo` se antepone al nombre del archivo en disco.
-    NO escribe en historial; retorna la lista de nombres guardados.
+    NO escribe en historial; retorna la lista de nombres guardados o enlaces de Drive.
     """
     if not cid:
         return []
-    folder = carpeta_docs_cliente(cid)
+    
+    # Determinar si usar Google Drive
+    use_drive = usar_drive and st.session_state.get('drive_creds') is not None
+    
     # Asegurar que `files` sea iterable (Streamlit acepta single file o lista)
     if files is None:
         return []
     files_iter = files if hasattr(files, '__iter__') and not isinstance(files, (bytes, bytearray)) else [files]
 
-    # Primero: leer todo el contenido en memoria de forma segura
-    to_write = []  # list of tuples (target_name, bytes)
-    for f in files_iter:
+    # Obtener nombre del cliente para la carpeta de Drive
+    cliente_nombre = ""
+    if use_drive:
         try:
-            fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
-            target_name = safe_name(f"{prefijo}{fname}")
-            data = None
-            if hasattr(f, "getbuffer"):
-                try:
-                    data = f.getbuffer()
-                except Exception:
-                    data = None
-            if data is None and hasattr(f, "read"):
-                try:
-                    data = f.read()
-                except Exception:
-                    data = None
-            if data is None:
-                continue
-            if isinstance(data, memoryview):
-                data = data.tobytes()
-            # ensure bytes
-            if isinstance(data, str):
-                data = data.encode("utf-8")
-            if not isinstance(data, (bytes, bytearray)):
-                try:
-                    data = bytes(data)
-                except Exception:
-                    continue
-            to_write.append((target_name, data))
-        except Exception:
-            continue
-
-    # Escribir en paralelo para acelerar (especialmente cuando hay varios archivos)
-    saved_files = []
-    try:
-        import concurrent.futures
-        max_workers = min(4, (len(to_write) or 1))
-        def _write_item(item):
-            tname, b = item
+            df_clientes = cargar_clientes()
+            cliente_info = df_clientes[df_clientes['cliente_id'] == cid]
+            if not cliente_info.empty:
+                cliente_nombre = cliente_info.iloc[0]['nombre']
+        except:
+            pass
+    
+    resultados = []
+    
+    if use_drive:
+        # Subir a Google Drive
+        st.info("📤 Subiendo documentos a Google Drive...")
+        for f in files_iter:
             try:
-                out_path = folder / tname
-                out_path.write_bytes(b)
-                return tname
-            except Exception:
-                return None
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(_write_item, it) for it in to_write]
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    res = fut.result()
-                    if res:
-                        saved_files.append(res)
-                except Exception:
-                    continue
-    except Exception:
-        # fallback a escritura secuencial si algo falla
-        for tname, b in to_write:
+                fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
+                target_name = safe_name(f"{prefijo}{fname}")
+                
+                # Crear un objeto temporal con el nombre correcto
+                import io
+                temp_file = io.BytesIO(f.getbuffer())
+                temp_file.name = target_name
+                temp_file.type = getattr(f, 'type', 'application/octet-stream')
+                temp_file.getbuffer = lambda: f.getbuffer()
+                
+                drive_link = subir_a_drive(temp_file, cid, cliente_nombre)
+                if drive_link:
+                    resultados.append(f"[Drive] {target_name}: {drive_link}")
+                    st.success(f"✅ {target_name} subido a Google Drive")
+                else:
+                    st.error(f"❌ Error subiendo {target_name} a Google Drive")
+            except Exception as e:
+                st.error(f"❌ Error con {fname}: {str(e)}")
+    else:
+        # Guardar localmente (método original)
+        folder = carpeta_docs_cliente(cid)
+        
+        # Primero: leer todo el contenido en memoria de forma segura
+        to_write = []  # list of tuples (target_name, bytes)
+        for f in files_iter:
             try:
-                out_path = folder / tname
-                out_path.write_bytes(b)
-                saved_files.append(tname)
+                fname = getattr(f, "name", None) or getattr(f, "filename", None) or "uploaded"
+                target_name = safe_name(f"{prefijo}{fname}")
+                data = None
+                if hasattr(f, "getbuffer"):
+                    try:
+                        data = f.getbuffer()
+                    except Exception:
+                        data = None
+                if data is None and hasattr(f, "read"):
+                    try:
+                        data = f.read()
+                    except Exception:
+                        data = None
+                if data is None:
+                    continue
+                if isinstance(data, memoryview):
+                    data = data.tobytes()
+                # ensure bytes
+                if isinstance(data, str):
+                    data = data.encode("utf-8")
+                if not isinstance(data, (bytes, bytearray)):
+                    try:
+                        data = bytes(data)
+                    except Exception:
+                        continue
+                to_write.append((target_name, data))
             except Exception:
                 continue
-    # devolver la lista de archivos guardados para que el llamador registre 1 entrada por lote
-    return saved_files
+
+        # Escribir en paralelo para acelerar (especialmente cuando hay varios archivos)
+        saved_files = []
+        try:
+            import concurrent.futures
+            def write_file(item):
+                target_name, data = item
+                target_path = folder / target_name
+                try:
+                    with open(target_path, "wb") as out:
+                        out.write(data)
+                    return target_name
+                except Exception:
+                    return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(write_file, to_write))
+                saved_files = [r for r in results if r is not None]
+        except ImportError:
+            # Fallback secuencial si no hay concurrent.futures
+            for target_name, data in to_write:
+                target_path = folder / target_name
+                try:
+                    with open(target_path, "wb") as out:
+                        out.write(data)
+                    saved_files.append(target_name)
+                except Exception:
+                    pass
+        resultados = saved_files
+    
+    return resultados
 
 
 def listar_docs_cliente(cid: str):
@@ -3367,6 +3468,20 @@ with tab_cli:
             obs_n = st.text_area("Observaciones")
 
             st.markdown("**Documentos:**")
+            
+            # Opción para elegir dónde guardar
+            col_storage1, col_storage2 = st.columns(2)
+            with col_storage1:
+                usar_google_drive = st.checkbox(
+                    "📤 Guardar en Google Drive", 
+                    value=st.session_state.get('drive_creds') is not None,
+                    disabled=st.session_state.get('drive_creds') is None,
+                    help="Guarda documentos en Google Drive (requiere conexión)"
+                )
+            with col_storage2:
+                if st.session_state.get('drive_creds') is None:
+                    st.info("💡 Conecta Google Drive en el sidebar para activar esta opción")
+            
             up_estado = st.file_uploader("Estado de cuenta", type=DOC_CATEGORIAS["estado_cuenta"], accept_multiple_files=True, key="doc_estado")
             up_buro   = st.file_uploader("Buró de crédito", type=DOC_CATEGORIAS["buro_credito"], accept_multiple_files=True, key="doc_buro")
             up_solic  = st.file_uploader("Solicitud", type=DOC_CATEGORIAS["solicitud"], accept_multiple_files=True, key="doc_solic")
@@ -3421,11 +3536,11 @@ with tab_cli:
 
                         # Guardar documentos (auto refresh al terminar) — acumular y registrar 1 sola entrada en historial
                         subidos_lote = []
-                        if up_estado:   subidos_lote += subir_docs(cid, up_estado,   prefijo="estado_")
-                        if up_buro:     subidos_lote += subir_docs(cid, up_buro,     prefijo="buro_")
-                        if up_solic:    subidos_lote += subir_docs(cid, up_solic,    prefijo="solic_")
-                        #if up_contrato: subidos_lote += subir_docs(cid, up_contrato, prefijo="contrato_")
-                        if up_otros:    subidos_lote += subir_docs(cid, up_otros,    prefijo="otros_")
+                        if up_estado:   subidos_lote += subir_docs(cid, up_estado,   prefijo="estado_", usar_drive=usar_google_drive)
+                        if up_buro:     subidos_lote += subir_docs(cid, up_buro,     prefijo="buro_", usar_drive=usar_google_drive)
+                        if up_solic:    subidos_lote += subir_docs(cid, up_solic,    prefijo="solic_", usar_drive=usar_google_drive)
+                        #if up_contrato: subidos_lote += subir_docs(cid, up_contrato, prefijo="contrato_", usar_drive=usar_google_drive)
+                        if up_otros:    subidos_lote += subir_docs(cid, up_otros,    prefijo="otros_", usar_drive=usar_google_drive)
 
                         if subidos_lote:
                             actor = (current_user() or {}).get("user") or (current_user() or {}).get("email")
@@ -4082,6 +4197,21 @@ with tab_docs:
         if cid_sel:
             estatus_cliente_sel = get_field_by_id(cid_sel, "estatus")
             st.markdown("#### Subir documentos")
+            
+            # Opción para elegir dónde guardar
+            col_storage_e1, col_storage_e2 = st.columns(2)
+            with col_storage_e1:
+                usar_google_drive_e = st.checkbox(
+                    "📤 Guardar en Google Drive", 
+                    value=st.session_state.get('drive_creds') is not None,
+                    disabled=st.session_state.get('drive_creds') is None,
+                    help="Guarda documentos en Google Drive (requiere conexión)",
+                    key=f"drive_option_{cid_sel}"
+                )
+            with col_storage_e2:
+                if st.session_state.get('drive_creds') is None:
+                    st.info("💡 Conecta Google Drive en el sidebar para activar esta opción")
+            
             # Unificar los uploaders en un solo formulario con un botón "Subir archivos"
             form_key = f"form_subir_docs_{cid_sel}"
             with st.form(form_key, clear_on_submit=True):
@@ -4096,11 +4226,11 @@ with tab_docs:
                 submitted = st.form_submit_button("⬆️ Subir archivos")
                 if submitted:
                     subidos_lote = []
-                    if up_estado_e:   subidos_lote += subir_docs(cid_sel, up_estado_e,   prefijo="estado_")
-                    if up_buro_e:     subidos_lote += subir_docs(cid_sel, up_buro_e,     prefijo="buro_")
-                    if up_solic_e:    subidos_lote += subir_docs(cid_sel, up_solic_e,    prefijo="solic_")
-                    if up_otros_e:    subidos_lote += subir_docs(cid_sel, up_otros_e,    prefijo="otros_")
-                    if up_contrato_e: subidos_lote += subir_docs(cid_sel, up_contrato_e, prefijo="contrato_")
+                    if up_estado_e:   subidos_lote += subir_docs(cid_sel, up_estado_e,   prefijo="estado_", usar_drive=usar_google_drive_e)
+                    if up_buro_e:     subidos_lote += subir_docs(cid_sel, up_buro_e,     prefijo="buro_", usar_drive=usar_google_drive_e)
+                    if up_solic_e:    subidos_lote += subir_docs(cid_sel, up_solic_e,    prefijo="solic_", usar_drive=usar_google_drive_e)
+                    if up_otros_e:    subidos_lote += subir_docs(cid_sel, up_otros_e,    prefijo="otros_", usar_drive=usar_google_drive_e)
+                    if up_contrato_e: subidos_lote += subir_docs(cid_sel, up_contrato_e, prefijo="contrato_", usar_drive=usar_google_drive_e)
 
                     if subidos_lote:
                         # Limpia uploaders
