@@ -4379,8 +4379,6 @@ with tab_docs:
                         mime="application/zip",
                         key=f"dl_zip_cliente_{cid_sel}"
                     )
-            else:
-                st.info("Este cliente no tiene documentos.")
 
             if can("delete_client"):
                 st.markdown("---")
