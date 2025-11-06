@@ -1959,70 +1959,52 @@ def cargar_y_corregir_clientes(force_reload: bool = False) -> pd.DataFrame:
 
 # Función para arreglar IDs duplicados/vacíos
 def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
-            updates = []
-            for _id in comunes_ids:
-                row_new = df_nuevo.loc[idx_nuevo[_id], COLUMNS]
-                row_old = df_actual.loc[idx_actual[_id], COLUMNS]
-                if not row_new.equals(row_old):
-                    fila = idx_actual[_id] + 2  # +2 por encabezado
-                    # rango A.. según número columnas (obtener letra de columna correctamente)
-                    col_a1 = gspread.utils.rowcol_to_a1(1, len(COLUMNS))  # e.g. 'P1'
-                    # quitar los dígitos al final para obtener la letra(s) de columna
-                    try:
-                        import re
-                        col_letter = re.sub(r"\d+$", "", col_a1)
-                    except Exception:
-                        col_letter = col_a1
-                    rango = f"A{fila}:{col_letter}{fila}"
-                    updates.append({
-                        "range": rango,
-                        "values": [row_new.tolist()]
-                    })
+    """Corrige IDs vacíos o duplicados en el DataFrame"""
+    if df is None or df.empty:
+        return df
+    
+    df_fixed = df.copy()
+    
+    # Generar IDs únicos para registros sin ID o con ID vacío
+    for idx, row in df_fixed.iterrows():
+        if pd.isna(row.get('id')) or str(row.get('id')).strip() == '':
+            # Generar nuevo ID único
+            existing_ids = set(df_fixed['id'].dropna().astype(str))
+            counter = 1000
+            while f"C-{counter}" in existing_ids:
+                counter += 1
+            df_fixed.at[idx, 'id'] = f"C-{counter}"
+    
+    return df_fixed
 
-            if updates:
-                try:
-                    ws.batch_update([{"range": u["range"], "values": u["values"]} for u in updates], value_input_option="RAW")
-                except Exception as e:
-                    try:
-                        print(f"⚠️ Error en batch_update de clientes en GSheets: {e}")
-                    except Exception:
-                        pass
+# Funciones de historial
+HIST_COLUMNS_DEFAULT = ["fecha","accion","id","nombre","detalle","usuario"]
 
-        HIST_COLUMNS_DEFAULT = ["fecha","accion","id","nombre","detalle","usuario"]
-
-        def append_historial_gsheet(evento: dict):
-            """ Agrega un registro al historial (una fila nueva) """
-            ws = _gs_open_worksheet(GSHEET_HISTTAB)
-            df_actual = _sheet_to_df(ws)
-            if df_actual.empty:
-                try:
-                    ws.update(values=[HIST_COLUMNS_DEFAULT], range_name="A1")
-                except Exception:
-                    pass
-            fila = [str(evento.get(col, "")) for col in HIST_COLUMNS_DEFAULT]
+def append_historial_gsheet(evento: dict):
+    """ Agrega un registro al historial (una fila nueva) """
+    if not USE_GSHEETS:
+        return
+        
+    try:
+        ws = _gs_open_worksheet(GSHEET_HISTTAB)
+        if ws is None:
+            return
+            
+        df_actual = _sheet_to_df(ws)
+        if df_actual.empty:
             try:
-                ws.append_rows([fila], value_input_option="RAW")
+                ws.update(values=[HIST_COLUMNS_DEFAULT], range_name="A1")
             except Exception:
                 pass
-
-        # Enviar a Google Sheets si está activado
-        if USE_GSHEETS:
-            try:
-                guardar_clientes_gsheet_append(df_to_save)
-            except Exception as e:
-                try:
-                    print(f"⚠️ Error al guardar en Google Sheets: {e}")
-                except Exception:
-                    pass
-
-    except Exception as e:
+        fila = [str(evento.get(col, "")) for col in HIST_COLUMNS_DEFAULT]
         try:
-            st.error(f"Error guardando clientes: {e}")
+            ws.append_rows([fila], value_input_option="RAW")
         except Exception:
             pass
+    except Exception:
+        pass
 
-# Función para corregir IDs duplicados/vacíos
-def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
+# Función append_historial local
     """Corrige IDs vacíos o duplicados en el DataFrame"""
     if df is None or df.empty:
         return df
@@ -2067,28 +2049,7 @@ def _fix_missing_or_duplicate_ids(df: pd.DataFrame) -> pd.DataFrame:
             usados.add(cur)
     return df
 
-# Función para cargar y corregir datos de clientes
-def cargar_y_corregir_clientes() -> pd.DataFrame:
-    """Carga los clientes y corrige IDs duplicados/vacíos si es necesario"""
-    df_cli = cargar_clientes()
-    
-    try:
-        df_fixed = _fix_missing_or_duplicate_ids(df_cli)
-        # solo guardar si hubo cambios (evitar escribir en disco/Sheets innecesariamente)
-        try:
-            changed = not df_fixed.equals(df_cli)
-        except Exception:
-            # en caso de error al comparar, guardar para mantener consistencia
-            changed = True
-        if changed:
-            df_cli = df_fixed
-            guardar_clientes(df_cli)
-        else:
-            df_cli = df_fixed
-    except Exception:
-        pass
-    
-    return df_cli# ---------- Historial y eliminación de clientes ----------
+# ---------- Historial y eliminación de clientes ----------
 HISTORIAL_CSV = DATA_DIR / "historial.csv"
 
 def cargar_historial() -> pd.DataFrame:
