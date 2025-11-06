@@ -2728,6 +2728,8 @@ if is_admin():
                         # Los asesores se manejan dinámicamente, pero podemos mantener una lista maestra
                         st.toast(f"✅ Asesor '{nuevo_asesor.strip()}' listo para usar")
                         st.session_state["reset_new_asesor"] = True
+                        # Forzar actualización de filtros para incluir nuevo asesor
+                        st.session_state["_filters_token"] = st.session_state.get("_filters_token", 0) + 1
                         st.rerun()
                     else:
                         st.toast("⚠️ Nombre vacío")
@@ -2910,11 +2912,31 @@ def _reset_filters():
     except Exception:
         pass
 
+def _force_refresh():
+    """Fuerza actualización de caché y filtros para mostrar nuevos datos"""
+    global _CLIENTES_CACHE, _CLIENTES_CACHE_TIME
+    try:
+        # Limpiar caché de clientes
+        _CLIENTES_CACHE = None
+        _CLIENTES_CACHE_TIME = 0
+        # Reset filtros también
+        _reset_filters()
+        st.rerun()
+    except Exception:
+        pass
+
 st.sidebar.button("🔁", key="btn_reset_filters", on_click=_reset_filters)
+st.sidebar.button("🔄 Actualizar", key="btn_force_refresh", on_click=_force_refresh, help="Actualiza datos y filtros para mostrar cambios recientes")
 
 # Aplicar filtros: si no hay selección o está vacía, NO filtrar (mostrar todo)
 try:
     # DEBUG: Mostrar estado de filtros en desarrollo
+    st.sidebar.write(f"**Debug Info:**")
+    st.sidebar.write(f"- Total clientes en base: {len(df_cli)}")
+    st.sidebar.write(f"- Asesores disponibles: {len(ASES_ALL)}")
+    st.sidebar.write(f"- Asesores filtrados: {len(f_ases) if f_ases else 0}")
+    if f_ases and len(f_ases) < len(ASES_ALL):
+        st.sidebar.write(f"- Asesores seleccionados: {f_ases[:3]}{'...' if len(f_ases) > 3 else ''}")
     # st.sidebar.write(f"DEBUG - f_suc: {len(f_suc) if f_suc else 0} de {len(SUC_ALL)}")
     # st.sidebar.write(f"DEBUG - f_ases: {len(f_ases) if f_ases else 0} de {len(ASES_ALL)}")
     # st.sidebar.write(f"DEBUG - f_est: {len(f_est) if f_est else 0} de {len(EST_ALL)}")
