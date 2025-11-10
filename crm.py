@@ -3238,12 +3238,11 @@ f_est  = selectbox_multi("Estatus",    EST_ALL,  "f_est")
 # NEW: añadir filtro de Fuente en el sidebar
 f_fuente = selectbox_multi("Fuente", FUENTE_ALL, "f_fuente")
 
-# Validar consistencia de datos
+# Validar consistencia de datos automáticamente
 if f_ases:
     # Verificar que los asesores seleccionados existen en los datos actuales
     valid_ases = [a for a in f_ases if a in ASES_ALL]
     if len(valid_ases) != len(f_ases):
-        st.sidebar.warning(f"⚠️ Algunos asesores seleccionados ya no existen en los datos")
         # Actualizar automáticamente el filtro con solo los asesores válidos
         st.session_state["f_ases"] = valid_ases
         st.session_state["f_ases_ms"] = valid_ases
@@ -3335,13 +3334,6 @@ try:
         current_asesor_for_filter = df_cli["asesor"].fillna("").replace({"": "(Sin asesor)"})
         current_asesor_normalized = current_asesor_for_filter.apply(_norm_sin_asesor_label)
         asesor_mask = current_asesor_normalized.isin(f_ases)
-        
-        # DEBUG: Debug temporal para entender el problema de filtros de asesores
-        st.sidebar.caption(f"🔍 Debug Asesores: {len(f_ases)} seleccionados de {len(ASES_ALL)}")
-        if len(f_ases) < 5:  # Solo mostrar si no son demasiados
-            st.sidebar.caption(f"Seleccionados: {f_ases}")
-        matched_count = asesor_mask.sum()
-        st.sidebar.caption(f"Registros coincidentes: {matched_count}/{len(df_cli)}")
 
     # Estatus: si está vacío o tiene todos, no filtrar
     if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
