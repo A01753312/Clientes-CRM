@@ -3238,6 +3238,17 @@ f_est  = selectbox_multi("Estatus",    EST_ALL,  "f_est")
 # NEW: añadir filtro de Fuente en el sidebar
 f_fuente = selectbox_multi("Fuente", FUENTE_ALL, "f_fuente")
 
+# Validar consistencia de datos
+if f_ases:
+    # Verificar que los asesores seleccionados existen en los datos actuales
+    valid_ases = [a for a in f_ases if a in ASES_ALL]
+    if len(valid_ases) != len(f_ases):
+        st.sidebar.warning(f"⚠️ Algunos asesores seleccionados ya no existen en los datos")
+        # Actualizar automáticamente el filtro con solo los asesores válidos
+        st.session_state["f_ases"] = valid_ases
+        st.session_state["f_ases_ms"] = valid_ases
+        f_ases = valid_ases
+
 def _reset_filters():
     try:
         st.session_state["f_suc"] = SUC_ALL.copy()
@@ -3312,13 +3323,25 @@ try:
     if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
         suc_mask = pd.Series(True, index=df_cli.index)
     else:
-        suc_mask = sucursal_for_filter.isin(f_suc)
+        # Regenerar sucursal_for_filter con datos actuales para evitar desincronización  
+        current_sucursal_for_filter = df_cli["sucursal"].fillna("").replace({"": SUC_LABEL_EMPTY})
+        suc_mask = current_sucursal_for_filter.isin(f_suc)
 
     # Asesor: si está vacío o tiene todos, no filtrar
     if not f_ases or len(f_ases) == 0 or set(f_ases) == set(ASES_ALL):
         asesor_mask = pd.Series(True, index=df_cli.index)
     else:
-        asesor_mask = asesor_for_filter_normalized.isin(f_ases)
+        # Regenerar asesor_for_filter_normalized con datos actuales para evitar desincronización
+        current_asesor_for_filter = df_cli["asesor"].fillna("").replace({"": "(Sin asesor)"})
+        current_asesor_normalized = current_asesor_for_filter.apply(_norm_sin_asesor_label)
+        asesor_mask = current_asesor_normalized.isin(f_ases)
+        
+        # DEBUG: Debug temporal para entender el problema de filtros de asesores
+        st.sidebar.caption(f"🔍 Debug Asesores: {len(f_ases)} seleccionados de {len(ASES_ALL)}")
+        if len(f_ases) < 5:  # Solo mostrar si no son demasiados
+            st.sidebar.caption(f"Seleccionados: {f_ases}")
+        matched_count = asesor_mask.sum()
+        st.sidebar.caption(f"Registros coincidentes: {matched_count}/{len(df_cli)}")
 
     # Estatus: si está vacío o tiene todos, no filtrar
     if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
@@ -3331,7 +3354,9 @@ try:
         if not f_fuente or len(f_fuente) == 0 or set(f_fuente) == set(FUENTE_ALL):
             fuente_mask = pd.Series(True, index=df_cli.index)
         else:
-            fuente_mask = fuente_for_filter.isin(f_fuente)
+            # Regenerar fuente_for_filter con datos actuales para evitar desincronización
+            current_fuente_for_filter = df_cli["fuente"].fillna("").apply(lambda x: str(x).strip() if str(x).strip() else "(Sin fuente)")
+            fuente_mask = current_fuente_for_filter.isin(f_fuente)
     except Exception:
         fuente_mask = pd.Series(True, index=df_cli.index)
 
@@ -3436,7 +3461,14 @@ with tab_dash:
             estatus_counts.get("PROPUESTA", 0),
             estatus_counts.get("PENDIENTE DOC", 0)
         ])
+        # Clasificar automáticamente todos los estatus que empiecen con "RECH" como rechazados
         rechazados = sum([
+            count for estatus, count in estatus_counts.items() 
+            if estatus and estatus.startswith("RECH")
+        ])
+        
+        # Mantener compatibilidad con estatus específicos anteriores
+        rechazados += sum([
             estatus_counts.get("REC SOBREENDEUDAMIENTO", 0),
             estatus_counts.get("REC NO CUMPLE POLITICAS", 0),
             estatus_counts.get("REC EDAD", 0)
