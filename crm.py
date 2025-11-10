@@ -4008,15 +4008,8 @@ with tab_dash:
                 if asesor_counts.empty:
                     st.info("No hay datos de asesores para mostrar.")
                 else:
-                    # Top 10 asesores + "Otros" (cuando hay muchos)
-                    if len(asesor_counts) > 10:
-                        top_10 = asesor_counts.head(10)
-                        otros = asesor_counts.tail(len(asesor_counts) - 10).sum()
-                        
-                        # Crear serie combinada
-                        asesor_final = pd.concat([top_10, pd.Series([otros], index=["Otros"])])
-                    else:
-                        asesor_final = asesor_counts
+                    # Mostrar TODOS los asesores (sin límite de Top 10)
+                    asesor_final = asesor_counts
                     
                     asesor_df = asesor_final.reset_index()
                     asesor_df.columns = ["asesor", "cantidad"]
@@ -4103,7 +4096,7 @@ with tab_dash:
 
         # 💰 ANÁLISIS FINANCIERO AVANZADO - CARTERA KAPITALIZA
         st.markdown("---")
-        st.subheader("� Análisis Financiero — Cartera Kapitaliza")
+        st.subheader(" Análisis Financiero — Cartera Kapitaliza")
         
         # Preparar datos con limpieza
         df_temp = df_cli.copy()
@@ -4231,14 +4224,31 @@ with tab_dash:
             else:
                 st.error("🚨 **Riesgo alto.** La mayoría de las solicitudes tienen baja conversión o alta cancelación. Revisar criterios de originación y documentación.")
             
-            # Análisis específico de oportunidades
-            pendientes = df_analisis[df_analisis['estatus'].str.contains('PEND|PENDIENTE', na=False)]
-            if not pendientes.empty:
-                total_pendientes = len(pendientes)
-                monto_pendientes = pendientes['monto_analisis'].sum()
+            # Análisis específico de oportunidades (incluir todos los pendientes)
+            # Definir estatus que se consideran "pendientes" o en proceso
+            estatus_pendientes = df_analisis[~df_analisis['estatus'].str.contains('DISPERSADO|RECHAZADO', na=False, case=False)]
+            
+            if not estatus_pendientes.empty:
+                total_pendientes = len(estatus_pendientes)
+                monto_pendientes = estatus_pendientes['monto_analisis'].sum()
                 pct_pendientes = (total_pendientes / len(df_analisis) * 100)
                 
-                st.info(f"💡 **Oportunidad:** {total_pendientes} créditos pendientes ({pct_pendientes:.0f}% del total) representan {formatear_monto(monto_pendientes)} en oportunidades. Priorizar seguimiento puede mejorar conversión.")
+                # Obtener breakdown por estatus pendiente
+                breakdown_pendientes = estatus_pendientes.groupby('estatus').agg({
+                    'nombre': 'count',
+                    'monto_analisis': 'sum'
+                }).rename(columns={'nombre': 'cantidad'})
+                
+                # Crear texto detallado con los estatus pendientes
+                detalle_estatus = []
+                for estatus, row in breakdown_pendientes.iterrows():
+                    detalle_estatus.append(f"{row['cantidad']} {estatus}")
+                
+                detalle_texto = ", ".join(detalle_estatus[:3])  # Mostrar los primeros 3
+                if len(detalle_estatus) > 3:
+                    detalle_texto += f" y {len(detalle_estatus) - 3} más"
+                
+                st.info(f"💡 **Oportunidad:** {total_pendientes} créditos pendientes ({pct_pendientes:.0f}% del total) representan {formatear_monto(monto_pendientes)} en oportunidades. Incluye: {detalle_texto}. Priorizar seguimiento puede mejorar conversión.")
             
             # === RESUMEN POR ESTATUS ===
             col_tabla, col_grafico = st.columns([1, 1])
