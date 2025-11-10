@@ -4046,51 +4046,132 @@ with tab_dash:
                         
                         st.altair_chart(chart_fuente, use_container_width=True)
 
-        # 💰 ANÁLISIS FINANCIERO SIMPLE
+        # 💰 ANÁLISIS FINANCIERO AVANZADO - CARTERA KAPITALIZA
         st.markdown("---")
-        with st.expander("💰 **Análisis de Montos**", expanded=False):
-            # Preparar datos con limpieza simple
-            df_temp = df_cli.copy()
+        st.subheader("� Análisis Financiero — Cartera Kapitaliza")
+        
+        # Preparar datos con limpieza
+        df_temp = df_cli.copy()
+        
+        def limpiar_monto_simple(monto_str):
+            if pd.isna(monto_str) or str(monto_str).strip() == "":
+                return 0.0
+            try:
+                import re
+                clean = re.sub(r'[,$\s]', '', str(monto_str))
+                return float(clean)
+            except:
+                return 0.0
+        
+        # Usar monto_final para dispersados, monto_propuesta para el resto
+        df_temp['monto_analisis'] = df_temp.apply(
+            lambda row: limpiar_monto_simple(row['monto_final']) if row['estatus'] == 'DISPERSADO' 
+            else limpiar_monto_simple(row['monto_propuesta']), axis=1
+        )
+        
+        # Filtrar solo clientes con monto > 0
+        df_analisis = df_temp[df_temp['monto_analisis'] > 0].copy()
+        
+        if df_analisis.empty:
+            st.info("No hay datos con montos registrados para análisis.")
+        else:
+            # === PONDERACIONES POR ESTATUS ===
+            factor_riesgo = {
+                "DISPERSADO": 0.95,
+                "PROPUESTA": 0.80,
+                "EN ONBOARDING": 0.70,
+                "PENDIENTE CLIENTE": 0.60,
+                "PENDIENTE DOC": 0.55,
+            }
             
-            def limpiar_monto_simple(monto_str):
-                if pd.isna(monto_str) or str(monto_str).strip() == "":
-                    return 0.0
-                try:
-                    # Remover comas y espacios, convertir a float
-                    import re
-                    clean = re.sub(r'[,$\s]', '', str(monto_str))
-                    return float(clean)
-                except:
-                    return 0.0
+            # Para estatus de rechazo, factor 0
+            for estatus in df_analisis['estatus'].unique():
+                if estatus and (estatus.startswith("RECH") or estatus.startswith("REC")):
+                    factor_riesgo[estatus] = 0.00
             
-            df_temp['monto_prop_num'] = df_temp['monto_propuesta'].apply(limpiar_monto_simple)
-            df_temp['monto_final_num'] = df_temp['monto_final'].apply(limpiar_monto_simple)
+            # Factor por defecto para estatus no definidos
+            df_analisis["Factor Riesgo"] = df_analisis["estatus"].map(factor_riesgo).fillna(0.5)
+            df_analisis["Retorno Esperado"] = df_analisis["monto_analisis"] * df_analisis["Factor Riesgo"]
+            df_analisis["Riesgo Estimado (%)"] = (1 - df_analisis["Factor Riesgo"]) * 100
             
-            # Cálculos básicos corregidos
-            total_propuesto = df_temp['monto_prop_num'].sum()
-            total_dispersado = df_temp[df_temp['estatus'] == 'DISPERSADO']['monto_final_num'].sum()
+            # === MÉTRICAS GLOBALES ===
+            total_otorgado = df_analisis["monto_analisis"].sum()
+            total_retorno = df_analisis["Retorno Esperado"].sum()
+            prom_riesgo = df_analisis["Riesgo Estimado (%)"].mean()
             
             col1, col2, col3 = st.columns(3)
-            
             with col1:
-                st.metric(
-                    "💵 Total Propuesto", 
-                    formatear_monto(total_propuesto)
-                )
-            
+                st.metric("💸 Total en Cartera", f"${total_otorgado:,.0f}")
             with col2:
-                st.metric(
-                    "✅ Total Dispersado", 
-                    formatear_monto(total_dispersado),
-                    delta=f"{(total_dispersado/total_propuesto*100):.1f}% del propuesto" if total_propuesto > 0 else "0%"
+                st.metric("📈 Retorno Esperado", f"${total_retorno:,.0f}")
+            with col3:
+                st.metric("⚠️ Riesgo Promedio", f"{prom_riesgo:.1f}%")
+            
+            st.markdown("---")
+            
+            # === INTERPRETACIÓN AUTOMÁTICA ===
+            st.markdown("##### 📈 Interpretación Financiera")
+            
+            if prom_riesgo < 25:
+                st.success("✅ **Cartera sana:** la mayoría de los créditos se encuentran dispersados o en proceso avanzado. El retorno proyectado es estable y el riesgo operativo bajo.")
+            elif prom_riesgo < 50:
+                st.warning("⚠️ **Riesgo moderado:** existen créditos en evaluación o pendientes. Se recomienda seguimiento y control del pipeline.")
+            else:
+                st.error("🚨 **Riesgo alto:** una porción significativa de la cartera presenta baja probabilidad de conversión. Es necesario revisar criterios de aprobación.")
+            
+            # === RESUMEN POR ESTATUS ===
+            col_tabla, col_grafico = st.columns([1, 1])
+            
+            with col_tabla:
+                st.markdown("##### 🔍 Distribución por Estatus")
+                resumen = df_analisis.groupby("estatus").agg({
+                    "monto_analisis": "sum",
+                    "Retorno Esperado": "sum",
+                    "Riesgo Estimado (%)": "mean",
+                    "nombre": "count"  # Contar clientes
+                }).rename(columns={"nombre": "Clientes"}).reset_index()
+                
+                # Formatear para mostrar
+                resumen_display = resumen.copy()
+                resumen_display["Monto Total"] = resumen_display["monto_analisis"].apply(lambda x: f"${x:,.0f}")
+                resumen_display["Retorno Esperado"] = resumen_display["Retorno Esperado"].apply(lambda x: f"${x:,.0f}")
+                resumen_display["Riesgo (%)"] = resumen_display["Riesgo Estimado (%)"].apply(lambda x: f"{x:.1f}%")
+                
+                st.dataframe(
+                    resumen_display[["estatus", "Clientes", "Monto Total", "Retorno Esperado", "Riesgo (%)"]],
+                    use_container_width=True,
+                    hide_index=True
                 )
             
-            with col3:
-                promedio_dispersado = df_temp[df_temp['estatus'] == 'DISPERSADO']['monto_final_num'].mean()
-                st.metric(
-                    "📊 Promedio Dispersado", 
-                    formatear_monto(promedio_dispersado if not pd.isna(promedio_dispersado) else 0)
-                )
+            with col_grafico:
+                st.markdown("##### 📊 Riesgo vs Retorno")
+                
+                # Preparar datos para gráfico
+                resumen_chart = resumen.copy()
+                resumen_chart = resumen_chart.sort_values("Retorno Esperado", ascending=False)
+                
+                # Gráfico profesional
+                chart = alt.Chart(resumen_chart).mark_bar(size=30).encode(
+                    x=alt.X("estatus:N", title="Estatus", sort="-y"),
+                    y=alt.Y("Retorno Esperado:Q", title="Retorno Esperado ($)"),
+                    color=alt.Color(
+                        "Riesgo Estimado (%):Q", 
+                        scale=alt.Scale(scheme="orangered", reverse=True),
+                        title="Riesgo %"
+                    ),
+                    tooltip=[
+                        alt.Tooltip("estatus:N", title="Estatus"),
+                        alt.Tooltip("Clientes:Q", title="Clientes"),
+                        alt.Tooltip("monto_analisis:Q", title="Monto Total", format="$,.0f"),
+                        alt.Tooltip("Retorno Esperado:Q", title="Retorno", format="$,.0f"),
+                        alt.Tooltip("Riesgo Estimado (%):Q", title="Riesgo (%)", format=".1f")
+                    ]
+                ).properties(height=300)
+                
+                st.altair_chart(chart, use_container_width=True)
+            
+            st.markdown("---")
+            st.caption("© CRM Kapitaliza — Análisis financiero automatizado desarrollado por Violeta Ávila García.")
 
 # ===== Clientes (alta + edición) =====
 with tab_cli:
