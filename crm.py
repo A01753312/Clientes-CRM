@@ -3560,6 +3560,35 @@ with tab_dash:
                 help="Clientes rechazados por diversos motivos"
             )
         
+        # 💹 Top Estatus por Monto
+        st.markdown("##### 💹 Top Estatus por Monto")
+        
+        # Calcular métricas financieras para el ranking
+        analisis_financiero = calcular_analisis_financiero(df_cli)
+        
+        if not analisis_financiero['montos_por_estatus'].empty:
+            # Obtener top estatus por monto propuesto
+            top_estatus = analisis_financiero['montos_por_estatus'].sort_values(
+                ('monto_propuesta_num', 'sum'), ascending=False
+            ).head(5)
+            
+            col1, col2 = st.columns(2)
+            
+            # Dividir en dos columnas para mostrar mejor
+            for i, (estatus, data) in enumerate(top_estatus.iterrows()):
+                monto_total = data[('monto_propuesta_num', 'sum')]
+                cantidad = data[('monto_propuesta_num', 'count')]
+                promedio = data[('monto_propuesta_num', 'mean')]
+                
+                with col1 if i % 2 == 0 else col2:
+                    st.metric(
+                        label=f"{estatus}",
+                        value=f"{formatear_monto(monto_total)} ({int(cantidad)} clientes)",
+                        delta=f"Promedio: {formatear_monto(promedio)}"
+                    )
+        else:
+            st.info("No hay datos con montos registrados para mostrar ranking.")
+        
         st.markdown("---")
         
         # � ANÁLISIS FINANCIERO
