@@ -1,0 +1,21 @@
+[client]
+# Oculta el botón de "Manage app" y otros elementos de Streamlit
+toolbarMode = "minimal"
+
+[ui]
+# Oculta el footer "Made with Streamlit"
+hideTopBar = false
+hideSidebarNav = false
+
+[theme]
+# Puedes personalizar los colores si lo deseas
+# primaryColor = "#FF4B4B"
+# backgroundColor = "#FFFFFF"
+# secondaryBackgroundColor = "#F0F2F6"
+# textColor = "#262730"
+# font = "sans serif"
+
+[server]
+# Configuración del servidor
+headless = true
+runOnSave = false
