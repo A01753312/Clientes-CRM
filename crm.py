@@ -3629,7 +3629,12 @@ with tab_dash:
             st.subheader("Análisis por Estatus")
             
             # Solo mostrar estatus con valores > 0 (más limpio)
-            estatus_data = df_cli["estatus"].fillna("(Sin estatus)").value_counts()
+            # Primero limpiar y normalizar estatus vacíos o nulos
+            df_temp = df_cli.copy()
+            df_temp["estatus_clean"] = df_temp["estatus"].fillna("(Sin estatus)").replace("", "(Sin estatus)")
+            df_temp["estatus_clean"] = df_temp["estatus_clean"].apply(lambda x: x.strip() if str(x).strip() else "(Sin estatus)")
+            
+            estatus_data = df_temp["estatus_clean"].value_counts()
             estatus_data = estatus_data[estatus_data > 0]  # Filtrar solo valores > 0
             
             if estatus_data.empty:
