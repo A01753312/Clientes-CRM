@@ -3304,15 +3304,15 @@ f_est  = selectbox_multi("Estatus",    EST_ALL,  "f_est")
 # NEW: añadir filtro de Fuente en el sidebar
 f_fuente = selectbox_multi("Fuente", FUENTE_ALL, "f_fuente")
 
-# Validar consistencia de datos automáticamente
+# Validar consistencia de datos automáticamente (método seguro)
 if f_ases:
     # Verificar que los asesores seleccionados existen en los datos actuales
     valid_ases = [a for a in f_ases if a in ASES_ALL]
     if len(valid_ases) != len(f_ases):
-        # Actualizar automáticamente el filtro con solo los asesores válidos
-        st.session_state["f_ases"] = valid_ases
-        st.session_state["f_ases_ms"] = valid_ases
+        # Solo usar los asesores válidos para el filtro, sin modificar session_state aquí
         f_ases = valid_ases
+        # Mostrar advertencia opcional (removida para evitar spam)
+        # st.sidebar.warning("Algunos asesores seleccionados ya no existen y fueron removidos automáticamente.")
 
 def _reset_filters():
     try:
