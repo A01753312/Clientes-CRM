@@ -635,6 +635,72 @@ def render_kpi_card(label: str, value: any, delta: str = None, icon: str = "📊
     """
     st.markdown(card_html, unsafe_allow_html=True)
 
+def calcular_analisis_financiero(df: pd.DataFrame) -> dict:
+    """Calcula métricas financieras del portfolio de clientes"""
+    import re
+    
+    def limpiar_monto(monto_str):
+        """Convierte string de monto a float, manejando diferentes formatos"""
+        if pd.isna(monto_str) or str(monto_str).strip() == "":
+            return 0.0
+        
+        # Convertir a string y limpiar
+        monto_clean = str(monto_str).strip()
+        
+        # Remover símbolos de moneda y espacios
+        monto_clean = re.sub(r'[,$\s]', '', monto_clean)
+        
+        # Intentar convertir a float
+        try:
+            return float(monto_clean)
+        except (ValueError, TypeError):
+            return 0.0
+    
+    # Limpiar y convertir montos
+    df_temp = df.copy()
+    df_temp['monto_propuesta_num'] = df_temp['monto_propuesta'].apply(limpiar_monto)
+    df_temp['monto_final_num'] = df_temp['monto_final'].apply(limpiar_monto)
+    
+    # Calcular métricas
+    total_propuesto = df_temp['monto_propuesta_num'].sum()
+    total_dispersado = df_temp[df_temp['estatus'] == 'DISPERSADO']['monto_final_num'].sum()
+    
+    # Promedios
+    promedio_propuesto = df_temp['monto_propuesta_num'].mean() if len(df_temp) > 0 else 0
+    dispersados_df = df_temp[df_temp['estatus'] == 'DISPERSADO']
+    promedio_dispersado = dispersados_df['monto_final_num'].mean() if len(dispersados_df) > 0 else 0
+    
+    # Efectividad de conversión
+    tasa_conversion_financiera = (total_dispersado / total_propuesto * 100) if total_propuesto > 0 else 0
+    
+    # Análisis por estatus con montos
+    montos_por_estatus = df_temp.groupby('estatus').agg({
+        'monto_propuesta_num': ['sum', 'mean', 'count'],
+        'monto_final_num': ['sum', 'mean']
+    }).round(2)
+    
+    return {
+        'total_propuesto': total_propuesto,
+        'total_dispersado': total_dispersado,
+        'promedio_propuesto': promedio_propuesto,
+        'promedio_dispersado': promedio_dispersado,
+        'tasa_conversion_financiera': tasa_conversion_financiera,
+        'montos_por_estatus': montos_por_estatus,
+        'clientes_con_monto': len(df_temp[df_temp['monto_propuesta_num'] > 0]),
+        'dispersados_con_monto': len(df_temp[(df_temp['estatus'] == 'DISPERSADO') & (df_temp['monto_final_num'] > 0)])
+    }
+
+def formatear_monto(monto: float) -> str:
+    """Formatea un monto para mostrar en pesos mexicanos"""
+    if monto == 0:
+        return "$0"
+    elif monto >= 1_000_000:
+        return f"${monto/1_000_000:.1f}M"
+    elif monto >= 1_000:
+        return f"${monto/1_000:.0f}K"
+    else:
+        return f"${monto:,.0f}"
+
 def get_base64_image(image_path):
     """Convierte imagen a base64 para embedding en HTML"""
     import base64
@@ -3505,7 +3571,91 @@ with tab_dash:
         
         st.markdown("---")
         
-        # 🔄 TABS SECUNDARIAS PARA ANÁLISIS DETALLADO
+        # � ANÁLISIS FINANCIERO
+        st.subheader("💰 Análisis Financiero")
+        
+        # Calcular métricas financieras
+        analisis_financiero = calcular_analisis_financiero(df_cli)
+        
+        # KPIs financieros en columnas
+        fin_col1, fin_col2, fin_col3, fin_col4 = st.columns(4)
+        
+        with fin_col1:
+            render_kpi_card(
+                label="💵 Total Propuesto",
+                value=formatear_monto(analisis_financiero['total_propuesto']),
+                icon="💰",
+                color="#28a745"
+            )
+        
+        with fin_col2:
+            render_kpi_card(
+                label="✅ Total Dispersado",
+                value=formatear_monto(analisis_financiero['total_dispersado']),
+                delta=f"{analisis_financiero['tasa_conversion_financiera']:.1f}% del propuesto",
+                icon="💸",
+                color="#007bff"
+            )
+        
+        with fin_col3:
+            render_kpi_card(
+                label="📊 Promedio Propuesto",
+                value=formatear_monto(analisis_financiero['promedio_propuesto']),
+                icon="📈",
+                color="#17a2b8"
+            )
+        
+        with fin_col4:
+            render_kpi_card(
+                label="🎯 Promedio Dispersado",
+                value=formatear_monto(analisis_financiero['promedio_dispersado']),
+                icon="💎",
+                color="#6f42c1"
+            )
+        
+        # Análisis detallado de conversión
+        col_izq, col_der = st.columns(2)
+        
+        with col_izq:
+            st.markdown("##### 📊 Resumen de Conversión")
+            total_clientes = len(df_cli)
+            clientes_con_monto = analisis_financiero['clientes_con_monto']
+            dispersados_con_monto = analisis_financiero['dispersados_con_monto']
+            
+            st.metric(
+                label="Clientes con Monto Registrado",
+                value=f"{clientes_con_monto}/{total_clientes}",
+                delta=f"{(clientes_con_monto/total_clientes*100):.1f}% del total" if total_clientes > 0 else "0%"
+            )
+            
+            st.metric(
+                label="Efectividad Financiera",
+                value=f"{analisis_financiero['tasa_conversion_financiera']:.1f}%",
+                help="Porcentaje del monto propuesto que efectivamente se ha dispersado"
+            )
+        
+        with col_der:
+            st.markdown("##### 💹 Top Estatus por Monto")
+            if not analisis_financiero['montos_por_estatus'].empty:
+                # Obtener top estatus por monto propuesto
+                top_estatus = analisis_financiero['montos_por_estatus'].sort_values(
+                    ('monto_propuesta_num', 'sum'), ascending=False
+                ).head(5)
+                
+                for estatus, data in top_estatus.iterrows():
+                    monto_total = data[('monto_propuesta_num', 'sum')]
+                    cantidad = data[('monto_propuesta_num', 'count')]
+                    promedio = data[('monto_propuesta_num', 'mean')]
+                    
+                    st.metric(
+                        label=f"{estatus}",
+                        value=f"{formatear_monto(monto_total)} ({cantidad} clientes)",
+                        delta=f"Promedio: {formatear_monto(promedio)}"
+                    )
+        
+        st.markdown("---")
+        
+        # �🔄 TABS SECUNDARIAS PARA ANÁLISIS DETALLADO
         dash_tab1, dash_tab2, dash_tab3 = st.tabs([
             "📊 Por Estatus", 
             "📅 Por Fecha", 
@@ -3904,6 +4054,139 @@ with tab_dash:
                         )
                         
                         st.altair_chart(chart_fuente, use_container_width=True)
+
+        # 💰 TAB 4: ANÁLISIS FINANCIERO DETALLADO
+        # Agregar el nuevo tab después de cambiar la definición de tabs
+        # Por ahora usar expander como alternativa
+        st.markdown("---")
+        with st.expander("💰 **Análisis Financiero Detallado**", expanded=False):
+            st.subheader("📊 Análisis Profundo de Montos")
+            
+            # Preparar datos financieros con limpieza
+            df_temp = df_cli.copy()
+            
+            def limpiar_monto_local(monto_str):
+                """Función local para limpiar montos"""
+                if pd.isna(monto_str) or str(monto_str).strip() == "":
+                    return 0.0
+                
+                import re
+                monto_clean = str(monto_str).strip()
+                monto_clean = re.sub(r'[,$\s]', '', monto_clean)
+                
+                try:
+                    return float(monto_clean)
+                except (ValueError, TypeError):
+                    return 0.0
+            
+            df_temp['monto_propuesta_num'] = df_temp['monto_propuesta'].apply(limpiar_monto_local)
+            df_temp['monto_final_num'] = df_temp['monto_final'].apply(limpiar_monto_local)
+            
+            # Análisis por rangos de monto
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### 📊 Distribución por Rangos de Monto Propuesto")
+                
+                # Definir rangos
+                df_with_monto = df_temp[df_temp['monto_propuesta_num'] > 0]
+                if not df_with_monto.empty:
+                    # Crear rangos personalizados
+                    bins = [0, 50000, 100000, 200000, 500000, 1000000, float('inf')]
+                    labels = ['$0-50K', '$50K-100K', '$100K-200K', '$200K-500K', '$500K-1M', '+$1M']
+                    
+                    df_with_monto['rango_monto'] = pd.cut(
+                        df_with_monto['monto_propuesta_num'], 
+                        bins=bins, 
+                        labels=labels, 
+                        include_lowest=True
+                    )
+                    
+                    rangos_count = df_with_monto['rango_monto'].value_counts().sort_index()
+                    
+                    for rango, count in rangos_count.items():
+                        porcentaje = (count / len(df_with_monto) * 100)
+                        monto_total = df_with_monto[df_with_monto['rango_monto'] == rango]['monto_propuesta_num'].sum()
+                        st.metric(
+                            label=str(rango),
+                            value=f"{count} clientes",
+                            delta=f"{formatear_monto(monto_total)} total ({porcentaje:.1f}%)"
+                        )
+                else:
+                    st.info("No hay clientes con montos registrados")
+            
+            with col2:
+                st.markdown("##### 💰 Análisis de Conversión por Estatus")
+                
+                # Análisis de conversión por estatus
+                estatus_financiero = df_temp.groupby('estatus').agg({
+                    'monto_propuesta_num': ['sum', 'count', 'mean'],
+                    'monto_final_num': ['sum', 'mean']
+                }).round(2)
+                
+                estatus_financiero.columns = ['Total_Prop', 'Count', 'Prom_Prop', 'Total_Final', 'Prom_Final']
+                estatus_financiero = estatus_financiero[estatus_financiero['Count'] > 0].sort_values('Total_Prop', ascending=False)
+                
+                for estatus, row in estatus_financiero.head(8).iterrows():
+                    conversion = (row['Total_Final'] / row['Total_Prop'] * 100) if row['Total_Prop'] > 0 else 0
+                    st.metric(
+                        label=f"{estatus} ({int(row['Count'])} clientes)",
+                        value=f"{formatear_monto(row['Total_Prop'])} → {formatear_monto(row['Total_Final'])}",
+                        delta=f"Conversión: {conversion:.1f}%"
+                    )
+            
+            # Gráfico de dispersión monto vs tiempo (si hay fechas)
+            st.markdown("##### 📈 Tendencia Temporal de Montos")
+            
+            try:
+                df_temp['fecha_ingreso_dt'] = pd.to_datetime(df_temp['fecha_ingreso'], errors='coerce')
+                df_plot = df_temp[(df_temp['monto_propuesta_num'] > 0) & (df_temp['fecha_ingreso_dt'].notna())].copy()
+                
+                if not df_plot.empty:
+                    # Agrupar por mes para tendencia
+                    df_plot['año_mes'] = df_plot['fecha_ingreso_dt'].dt.to_period('M')
+                    tendencia_mensual = df_plot.groupby('año_mes').agg({
+                        'monto_propuesta_num': ['sum', 'count', 'mean']
+                    }).round(2)
+                    
+                    tendencia_mensual.columns = ['Total', 'Cantidad', 'Promedio']
+                    tendencia_mensual = tendencia_mensual.reset_index()
+                    tendencia_mensual['Mes'] = tendencia_mensual['año_mes'].astype(str)
+                    
+                    if len(tendencia_mensual) > 1:
+                        col_chart1, col_chart2 = st.columns(2)
+                        
+                        with col_chart1:
+                            # Gráfico de barras para total mensual
+                            chart_total = alt.Chart(tendencia_mensual).mark_bar(color='#1f77b4').encode(
+                                x=alt.X('Mes:O', title='Mes'),
+                                y=alt.Y('Total:Q', title='Monto Total'),
+                                tooltip=['Mes:O', 'Total:Q', 'Cantidad:Q']
+                            ).properties(
+                                height=300,
+                                title='Monto Total Propuesto por Mes'
+                            )
+                            st.altair_chart(chart_total, use_container_width=True)
+                        
+                        with col_chart2:
+                            # Gráfico de línea para promedio mensual
+                            chart_promedio = alt.Chart(tendencia_mensual).mark_line(
+                                point=True, color='#ff7f0e'
+                            ).encode(
+                                x=alt.X('Mes:O', title='Mes'),
+                                y=alt.Y('Promedio:Q', title='Monto Promedio'),
+                                tooltip=['Mes:O', 'Promedio:Q', 'Cantidad:Q']
+                            ).properties(
+                                height=300,
+                                title='Monto Promedio por Mes'
+                            )
+                            st.altair_chart(chart_promedio, use_container_width=True)
+                    else:
+                        st.info("Se necesitan al menos 2 meses de datos para mostrar tendencias")
+                else:
+                    st.info("No hay suficientes datos con fechas y montos para mostrar tendencias")
+            except Exception as e:
+                st.error(f"Error al procesar tendencias temporales: {str(e)}")
 
 # ===== Clientes (alta + edición) =====
 with tab_cli:
