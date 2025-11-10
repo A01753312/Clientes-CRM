@@ -819,6 +819,24 @@ _CLIENTES_CACHE_TIME = 0
 _HISTORIAL_CACHE = None
 _HISTORIAL_CACHE_TIME = 0
 
+# Variables globales para caché de usuarios
+_USUARIOS_CACHE = None
+_USUARIOS_CACHE_TIME = 0
+
+# Variables globales para caché de catálogos
+_CATALOGS_CACHE = {
+    "sucursales": None,
+    "estatus": None,
+    "segundo_estatus": None,
+    "asesores": None
+}
+_CATALOGS_CACHE_TIME = {
+    "sucursales": 0,
+    "estatus": 0,
+    "segundo_estatus": 0,
+    "asesores": 0
+}
+
 def _gs_credentials():
     """Carga credenciales desde Streamlit secrets - Versión mejorada para Streamlit Cloud"""
     global _GS_CREDS
@@ -911,17 +929,36 @@ def _gs_open_worksheet(tab_name: str, force_reload: bool = False):
 def limpiar_cache_gsheets():
     """Limpia todos los cachés de Google Sheets para forzar recarga de datos."""
     global _GS_GC, _GS_SH, _GS_WS_CACHE, _CLIENTES_CACHE, _CLIENTES_CACHE_TIME, _GS_WS_CACHE_TIME
+    global _HISTORIAL_CACHE, _HISTORIAL_CACHE_TIME, _USUARIOS_CACHE, _USUARIOS_CACHE_TIME
+    global _CATALOGS_CACHE, _CATALOGS_CACHE_TIME
+    
     _GS_WS_CACHE.clear()
     _GS_WS_CACHE_TIME.clear()
     _GS_GC = None
     _GS_SH = None
     _CLIENTES_CACHE = None
     _CLIENTES_CACHE_TIME = 0
+    _HISTORIAL_CACHE = None
+    _HISTORIAL_CACHE_TIME = 0
+    _USUARIOS_CACHE = None
+    _USUARIOS_CACHE_TIME = 0
+    
+    # Limpiar catálogos
+    for key in _CATALOGS_CACHE:
+        _CATALOGS_CACHE[key] = None
+        _CATALOGS_CACHE_TIME[key] = 0
+    
     st.cache_data.clear()
     if 'gs_load_msg_shown' in st.session_state:
         del st.session_state['gs_load_msg_shown']
     if 'gs_first_load' in st.session_state:
         del st.session_state['gs_first_load']
+
+def limpiar_cache_usuarios():
+    """Limpia el caché de usuarios para forzar recarga"""
+    global _USUARIOS_CACHE, _USUARIOS_CACHE_TIME
+    _USUARIOS_CACHE = None
+    _USUARIOS_CACHE_TIME = 0
 
 def find_logo_path() -> Path | None:
     # Buscar logo en data/ (logo.png, logo.jpg) o en data/logo subfolder
@@ -1151,14 +1188,44 @@ def sync_catalog_to_gsheet(catalog_name: str, catalog_data: list, sheet_tab: str
     except Exception:
         pass  # Fallar silenciosamente
 
-def load_catalog_from_gsheet(sheet_tab: str, default_values: list = None) -> list:
-    """Carga un catálogo desde Google Sheets con fallback a valores por defecto"""
+def load_catalog_from_gsheet(sheet_tab: str, default_values: list = None, force_reload: bool = False) -> list:
+    """
+    Carga un catálogo desde Google Sheets con caché inteligente
+    force_reload: True para forzar recarga desde Google Sheets
+    """
+    global _CATALOGS_CACHE, _CATALOGS_CACHE_TIME
+    
     if not USE_GSHEETS:
         return default_values or []
     
+    # Determinar qué catálogo es basándose en sheet_tab
+    catalog_name = None
+    if "sucursal" in sheet_tab.lower():
+        catalog_name = "sucursales"
+    elif "segundo" in sheet_tab.lower() or "2" in sheet_tab.lower():
+        catalog_name = "segundo_estatus"
+    elif "estatus" in sheet_tab.lower() or "status" in sheet_tab.lower():
+        catalog_name = "estatus"
+    elif "asesor" in sheet_tab.lower():
+        catalog_name = "asesores"
+    
+    # Si tenemos el nombre del catálogo, usar caché
+    if catalog_name:
+        import time
+        now = time.time()
+        cache_duration = 600  # 10 minutos (los catálogos cambian muy raramente)
+        
+        # Usar caché si es reciente y no se fuerza recarga
+        if not force_reload and _CATALOGS_CACHE.get(catalog_name) is not None:
+            if (now - _CATALOGS_CACHE_TIME.get(catalog_name, 0)) < cache_duration:
+                return _CATALOGS_CACHE[catalog_name].copy()
+    
     try:
-        ws = _gs_open_worksheet(sheet_tab)
+        ws = _gs_open_worksheet(sheet_tab, force_reload=force_reload)
         if ws is None:
+            # Si hay caché antiguo, usarlo
+            if catalog_name and _CATALOGS_CACHE.get(catalog_name) is not None:
+                return _CATALOGS_CACHE[catalog_name].copy()
             return default_values or []
         
         # Obtener todos los valores
@@ -1167,9 +1234,22 @@ def load_catalog_from_gsheet(sheet_tab: str, default_values: list = None) -> lis
             values = [str(row.get("valor", "")).strip() for row in data]
             # Filtrar valores vacíos
             values = [v for v in values if v]
-            return values if values else (default_values or [])
+            result = values if values else (default_values or [])
+        else:
+            result = default_values or []
+        
+        # Actualizar caché si identificamos el catálogo
+        if catalog_name:
+            import time
+            _CATALOGS_CACHE[catalog_name] = result.copy()
+            _CATALOGS_CACHE_TIME[catalog_name] = time.time()
+        
+        return result
             
     except Exception:
+        # Si hay error y existe caché, usarlo
+        if catalog_name and _CATALOGS_CACHE.get(catalog_name) is not None:
+            return _CATALOGS_CACHE[catalog_name].copy()
         pass
     
     return default_values or []
@@ -2654,38 +2734,57 @@ def _verify_pw(password: str, salt_hex: str, hash_hex: str) -> bool:
     _, hh = _hash_pw_pbkdf2(password, salt_hex)
     return secrets.compare_digest(hh, (hash_hex or ""))
 
-def cargar_usuarios_gsheet() -> dict:
+def cargar_usuarios_gsheet(force_reload: bool = False) -> dict:
     """
-    Carga usuarios desde Google Sheets
-    Retorna el mismo formato que load_users()
+    Carga usuarios desde Google Sheets con caché inteligente
+    force_reload: True para forzar recarga desde Google Sheets
     """
+    global _USUARIOS_CACHE, _USUARIOS_CACHE_TIME
+    
+    import time
+    now = time.time()
+    cache_duration = 300  # 5 minutos (los usuarios no cambian frecuentemente)
+    
+    # Usar caché si es reciente y no se fuerza recarga
+    if not force_reload and _USUARIOS_CACHE is not None:
+        if (now - _USUARIOS_CACHE_TIME) < cache_duration:
+            return _USUARIOS_CACHE.copy()
+    
     if not USE_GSHEETS:
         return {"users": []}
     
     try:
-        ws = _gs_open_worksheet(GSHEET_USERSTAB)
+        ws = _gs_open_worksheet(GSHEET_USERSTAB, force_reload=force_reload)
         if ws is None:
             return {"users": []}
             
         df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str, header=0).dropna(how="all")
         if df is None or df.empty:
-            return {"users": []}
-            
-        users = []
-        for _, row in df.iterrows():
-            user_data = {
-                "user": row.get("user", ""),
-                "role": row.get("role", "member"),
-                "salt": row.get("salt", ""),
-                "hash": row.get("hash", "")
-            }
-            # Solo agregar usuarios válidos
-            if user_data["user"] and user_data["salt"] and user_data["hash"]:
-                users.append(user_data)
-                
-        return {"users": users}
+            result = {"users": []}
+        else:
+            users = []
+            for _, row in df.iterrows():
+                user_data = {
+                    "user": row.get("user", ""),
+                    "role": row.get("role", "member"),
+                    "salt": row.get("salt", ""),
+                    "hash": row.get("hash", "")
+                }
+                # Solo agregar usuarios válidos
+                if user_data["user"] and user_data["salt"] and user_data["hash"]:
+                    users.append(user_data)
+            result = {"users": users}
+        
+        # Actualizar caché
+        _USUARIOS_CACHE = result.copy()
+        _USUARIOS_CACHE_TIME = now
+        return result
         
     except Exception as e:
+        # Si hay error de API (quota exceeded), usar caché antiguo si existe
+        if _USUARIOS_CACHE is not None:
+            st.warning(f"⚠️ Usando caché de usuarios (API temporalmente no disponible)")
+            return _USUARIOS_CACHE.copy()
         st.error(f"Error cargando usuarios desde Google Sheets: {e}")
         return {"users": []}
 
@@ -2798,6 +2897,8 @@ def add_user(username: str, password: str, role: str = "member") -> tuple[bool, 
     salt_hex, hash_hex = _hash_pw_pbkdf2(password)
     data["users"].append({"user": uname, "role": role, "salt": salt_hex, "hash": hash_hex})
     save_users(data)
+    # Limpiar caché para forzar recarga
+    limpiar_cache_usuarios()
     return True, "Usuario creado."
 
 def delete_user(username: str) -> tuple[bool, str]:
@@ -2811,6 +2912,8 @@ def delete_user(username: str) -> tuple[bool, str]:
             users.pop(i)
             data["users"] = users
             save_users(data)
+            # Limpiar caché para forzar recarga
+            limpiar_cache_usuarios()
             return True, "Usuario eliminado."
     return False, "Usuario no encontrado."
 
