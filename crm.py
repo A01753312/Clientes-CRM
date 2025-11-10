@@ -726,6 +726,12 @@ GSHEET_ID      = "10_xueUKm0O1QwOK1YtZI-dFZlNdKVv82M2z29PfM9qk"
 GSHEET_TAB     = "clientes"    # tu pestaña principal
 GSHEET_HISTTAB = "historial"   # tu pestaña de historial
 
+# Pestañas de catálogos
+GSHEET_SUCURSALES_TAB = "sucursales"
+GSHEET_ASESORES_TAB = "asesores"  
+GSHEET_ESTATUS_TAB = "estatus"
+GSHEET_SEGUNDO_ESTATUS_TAB = "segundo_estatus"
+
 
 # Opcional: pega aquí el contenido JSON del service account si prefieres no usar el archivo
 # Si la variable está vacía (""), se seguirá leyendo `service_account.json` desde disco.
@@ -867,8 +873,26 @@ SUCURSALES_FILE = DATA_DIR / "sucursales.json"
 
 def load_sucursales() -> list:
     """
-    Carga la lista de sucursales desde un JSON en DATA_DIR. Si no existe, crea el archivo con valores por defecto.
+    Carga la lista de sucursales desde Google Sheets (prioritario) o JSON local (respaldo).
     """
+    # Valores por defecto
+    defaults = ["TOXQUI", "COLOKTE", "KAPITALIZA"]
+    
+    # Intentar cargar desde Google Sheets primero
+    if USE_GSHEETS:
+        try:
+            gsheet_data = load_catalog_from_gsheet(GSHEET_SUCURSALES_TAB, defaults)
+            if gsheet_data:
+                # Sincronizar con archivo local
+                try:
+                    SUCURSALES_FILE.write_text(json.dumps(gsheet_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+                return gsheet_data
+        except Exception:
+            pass
+    
+    # Respaldo: cargar desde archivo local
     try:
         if SUCURSALES_FILE.exists():
             data = json.loads(SUCURSALES_FILE.read_text(encoding="utf-8"))
@@ -877,10 +901,13 @@ def load_sucursales() -> list:
                 return [str(x).strip() for x in data if str(x).strip()]
     except Exception:
         pass
-    # Valores por defecto
-    defaults = ["TOXQUI", "COLOKTE", "KAPITALIZA"]
+    
+    # Si todo falla, usar valores por defecto y crearlos
     try:
         SUCURSALES_FILE.write_text(json.dumps(defaults, ensure_ascii=False, indent=2), encoding="utf-8")
+        # También sincronizar con Google Sheets si está disponible
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("sucursales", defaults, GSHEET_SUCURSALES_TAB)
     except Exception:
         pass
     return defaults
@@ -892,6 +919,9 @@ def save_sucursales(lst: list):
         # Limpiar cache relacionado
         _cache_data.pop("sucursales", None)
         _cache_timestamp.pop("sucursales", None)
+        # Sincronizar con Google Sheets
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("sucursales", clean, GSHEET_SUCURSALES_TAB)
     except Exception:
         pass
 
@@ -901,7 +931,26 @@ ESTATUS_FILE = DATA_DIR / "estatus.json"
 SEGUNDO_ESTATUS_FILE = DATA_DIR / "segundo_estatus.json"
 
 def load_estatus() -> list:
+    """
+    Carga la lista de estatus desde Google Sheets (prioritario) o JSON local (respaldo).
+    """
     defaults = ["DISPERSADO","EN ONBOARDING","PENDIENTE CLIENTE","PROPUESTA","PENDIENTE DOC","REC SOBREENDEUDAMIENTO","REC NO CUMPLE POLITICAS","REC EDAD"]
+    
+    # Intentar cargar desde Google Sheets primero
+    if USE_GSHEETS:
+        try:
+            gsheet_data = load_catalog_from_gsheet(GSHEET_ESTATUS_TAB, defaults)
+            if gsheet_data:
+                # Sincronizar con archivo local
+                try:
+                    ESTATUS_FILE.write_text(json.dumps(gsheet_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+                return gsheet_data
+        except Exception:
+            pass
+    
+    # Respaldo: cargar desde archivo local
     try:
         if ESTATUS_FILE.exists():
             data = json.loads(ESTATUS_FILE.read_text(encoding="utf-8"))
@@ -909,8 +958,13 @@ def load_estatus() -> list:
                 return [str(x).strip() for x in data if str(x).strip()]
     except Exception:
         pass
+    
+    # Si todo falla, usar valores por defecto
     try:
         ESTATUS_FILE.write_text(json.dumps(defaults, ensure_ascii=False, indent=2), encoding="utf-8")
+        # También sincronizar con Google Sheets si está disponible
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("estatus", defaults, GSHEET_ESTATUS_TAB)
     except Exception:
         pass
     return defaults
@@ -949,11 +1003,33 @@ def save_estatus(lst: list):
         # Limpiar cache relacionado
         _cache_data.pop("estatus", None)
         _cache_timestamp.pop("estatus", None)
+        # Sincronizar con Google Sheets
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("estatus", clean, GSHEET_ESTATUS_TAB)
     except Exception:
         pass
 
 def load_segundo_estatus() -> list:
+    """
+    Carga la lista de segundo estatus desde Google Sheets (prioritario) o JSON local (respaldo).
+    """
     defaults = ["","DISPERSADO","EN ONBOARDING","PEND.ACEPT.CLIENTE","APROB.CON PROPUESTA","PEND.DOC.PARA EVALUACION","RECH.SOBREENDEUDAMIENTO","RECH. TIPO PENSION","RECH.EDAD"]
+    
+    # Intentar cargar desde Google Sheets primero
+    if USE_GSHEETS:
+        try:
+            gsheet_data = load_catalog_from_gsheet(GSHEET_SEGUNDO_ESTATUS_TAB, defaults)
+            if gsheet_data:
+                # Sincronizar con archivo local
+                try:
+                    SEGUNDO_ESTATUS_FILE.write_text(json.dumps(gsheet_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+                return gsheet_data
+        except Exception:
+            pass
+    
+    # Respaldo: cargar desde archivo local
     try:
         if SEGUNDO_ESTATUS_FILE.exists():
             data = json.loads(SEGUNDO_ESTATUS_FILE.read_text(encoding="utf-8"))
@@ -961,8 +1037,13 @@ def load_segundo_estatus() -> list:
                 return [str(x).strip() for x in data if str(x).strip() or x == ""]
     except Exception:
         pass
+    
+    # Si todo falla, usar valores por defecto
     try:
         SEGUNDO_ESTATUS_FILE.write_text(json.dumps(defaults, ensure_ascii=False, indent=2), encoding="utf-8")
+        # También sincronizar con Google Sheets si está disponible
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("segundo_estatus", defaults, GSHEET_SEGUNDO_ESTATUS_TAB)
     except Exception:
         pass
     return defaults
@@ -974,10 +1055,110 @@ def save_segundo_estatus(lst: list):
         # Limpiar cache relacionado
         _cache_data.pop("segundo_estatus", None)
         _cache_timestamp.pop("segundo_estatus", None)
+        # Sincronizar con Google Sheets
+        if USE_GSHEETS:
+            sync_catalog_to_gsheet("segundo_estatus", clean, GSHEET_SEGUNDO_ESTATUS_TAB)
     except Exception:
         pass
 
-# Inicializar catálogos desde disco
+# === FUNCIONES DE SINCRONIZACIÓN CON GOOGLE SHEETS ===
+
+def sync_catalog_to_gsheet(catalog_name: str, catalog_data: list, sheet_tab: str):
+    """Sincroniza un catálogo local a Google Sheets"""
+    if not USE_GSHEETS:
+        return
+    try:
+        ws = _gs_open_worksheet(sheet_tab)
+        if ws is None:
+            return
+        
+        # Crear DataFrame con el catálogo
+        df_catalog = pd.DataFrame({"valor": catalog_data})
+        
+        # Limpiar la hoja y escribir los datos
+        ws.clear()
+        ws.update("A1", [["valor"]])  # Encabezado
+        if not df_catalog.empty:
+            rows = df_catalog.values.tolist()
+            ws.append_rows(rows, value_input_option="RAW")
+            
+    except Exception:
+        pass  # Fallar silenciosamente
+
+def load_catalog_from_gsheet(sheet_tab: str, default_values: list = None) -> list:
+    """Carga un catálogo desde Google Sheets con fallback a valores por defecto"""
+    if not USE_GSHEETS:
+        return default_values or []
+    
+    try:
+        ws = _gs_open_worksheet(sheet_tab)
+        if ws is None:
+            return default_values or []
+        
+        # Obtener todos los valores
+        data = ws.get_all_records()
+        if data:
+            values = [str(row.get("valor", "")).strip() for row in data]
+            # Filtrar valores vacíos
+            values = [v for v in values if v]
+            return values if values else (default_values or [])
+            
+    except Exception:
+        pass
+    
+    return default_values or []
+
+def sync_sucursales_to_gsheet():
+    """Sincroniza sucursales a Google Sheets"""
+    sync_catalog_to_gsheet("sucursales", SUCURSALES, GSHEET_SUCURSALES_TAB)
+
+def sync_estatus_to_gsheet():
+    """Sincroniza estatus a Google Sheets"""
+    sync_catalog_to_gsheet("estatus", ESTATUS_OPCIONES, GSHEET_ESTATUS_TAB)
+
+def sync_segundo_estatus_to_gsheet():
+    """Sincroniza segundo estatus a Google Sheets"""
+    sync_catalog_to_gsheet("segundo_estatus", SEGUNDO_ESTATUS_OPCIONES, GSHEET_SEGUNDO_ESTATUS_TAB)
+
+def sync_asesores_to_gsheet():
+    """Sincroniza asesores únicos desde la base de clientes a Google Sheets"""
+    try:
+        df_cli = cargar_clientes()
+        asesores_unicos = sorted(list(set([
+            asesor.strip() for asesor in df_cli["asesor"].fillna("").astype(str).tolist() 
+            if asesor.strip() and asesor.strip() != "(Sin asesor)"
+        ])))
+        sync_catalog_to_gsheet("asesores", asesores_unicos, GSHEET_ASESORES_TAB)
+    except Exception:
+        pass
+
+def load_catalogs_from_gsheet():
+    """Carga todos los catálogos desde Google Sheets y actualiza las variables globales"""
+    global SUCURSALES, ESTATUS_OPCIONES, SEGUNDO_ESTATUS_OPCIONES
+    
+    try:
+        # Cargar desde Google Sheets con fallback a valores actuales
+        new_sucursales = load_catalog_from_gsheet(GSHEET_SUCURSALES_TAB, SUCURSALES)
+        new_estatus = load_catalog_from_gsheet(GSHEET_ESTATUS_TAB, ESTATUS_OPCIONES) 
+        new_segundo_estatus = load_catalog_from_gsheet(GSHEET_SEGUNDO_ESTATUS_TAB, SEGUNDO_ESTATUS_OPCIONES)
+        
+        # Actualizar variables globales si hay datos válidos
+        if new_sucursales:
+            SUCURSALES = new_sucursales
+            save_sucursales(SUCURSALES)  # Sincronizar con archivo local
+            
+        if new_estatus:
+            ESTATUS_OPCIONES = new_estatus
+            save_estatus(ESTATUS_OPCIONES)  # Sincronizar con archivo local
+            
+        if new_segundo_estatus:
+            SEGUNDO_ESTATUS_OPCIONES = new_segundo_estatus
+            save_segundo_estatus(SEGUNDO_ESTATUS_OPCIONES)  # Sincronizar con archivo local
+            
+    except Exception:
+        pass  # Mantener valores actuales si falla
+
+# Inicializar catálogos desde disco (con posible actualización desde Google Sheets)
 ESTATUS_OPCIONES = load_estatus()
 SEGUNDO_ESTATUS_OPCIONES = load_segundo_estatus()
 
@@ -2770,8 +2951,54 @@ if is_admin():
                     else:
                         st.write("")
 
-    # -- Gestión unificada (solo admin) -- (OPTIMIZADA)
+    # -- Sincronización de Catálogos con Google Sheets --
     st.sidebar.markdown("---")
+    with st.sidebar.expander("☁️ Sincronización de Catálogos", expanded=False):
+        st.caption("Sincronizar catálogos con Google Sheets")
+        
+        col_sync1, col_sync2 = st.columns(2)
+        
+        with col_sync1:
+            if st.button("📤 Subir Todo", key="sync_all_to_gsheet", help="Subir todos los catálogos a Google Sheets"):
+                with st.spinner("Sincronizando catálogos..."):
+                    sync_sucursales_to_gsheet()
+                    sync_estatus_to_gsheet()
+                    sync_segundo_estatus_to_gsheet()
+                    sync_asesores_to_gsheet()
+                st.toast("✅ Catálogos sincronizados a Google Sheets", icon="✅")
+                
+        with col_sync2:
+            if st.button("📥 Descargar Todo", key="sync_all_from_gsheet", help="Descargar todos los catálogos desde Google Sheets"):
+                with st.spinner("Cargando catálogos..."):
+                    load_catalogs_from_gsheet()
+                st.toast("✅ Catálogos actualizados desde Google Sheets", icon="✅")
+                st.rerun()
+        
+        # Sincronización individual
+        st.markdown("**Sincronización individual:**")
+        sync_cols = st.columns(4)
+        
+        with sync_cols[0]:
+            if st.button("🏢", key="sync_suc", help="Sincronizar Sucursales"):
+                sync_sucursales_to_gsheet()
+                st.toast("✅ Sucursales sincronizadas")
+                
+        with sync_cols[1]:
+            if st.button("👥", key="sync_ases", help="Sincronizar Asesores"):
+                sync_asesores_to_gsheet()
+                st.toast("✅ Asesores sincronizados")
+                
+        with sync_cols[2]:
+            if st.button("📊", key="sync_est", help="Sincronizar Estatus"):
+                sync_estatus_to_gsheet()
+                st.toast("✅ Estatus sincronizados")
+                
+        with sync_cols[3]:
+            if st.button("📈", key="sync_seg", help="Sincronizar 2° Estatus"):
+                sync_segundo_estatus_to_gsheet()
+                st.toast("✅ 2° Estatus sincronizados")
+
+    # -- Gestión unificada (solo admin) -- (OPTIMIZADA)
     with st.sidebar.expander("⚙️ Gestión de Catálogos", expanded=False):
         st.caption("Administrar sucursales, asesores, estatus y segundo estatus")
         
@@ -2995,6 +3222,9 @@ def _norm_sin_asesor_label(x: str) -> str:
 # Aplicar normalización y asegurar unicidad
 ASES_ALL = sorted(list(dict.fromkeys([_norm_sin_asesor_label(x) for x in asesor_for_filter.unique().tolist()])))
 
+# IMPORTANTE: Aplicar la misma normalización a asesor_for_filter para que coincida con ASES_ALL
+asesor_for_filter_normalized = asesor_for_filter.apply(_norm_sin_asesor_label)
+
 EST_ALL = ESTATUS_OPCIONES.copy()
 
 # --- NEW: Fuentes para filtro (se generan dinámicamente desde la base para que nuevas fuentes aparezcan automáticamente)
@@ -3088,7 +3318,7 @@ try:
     if not f_ases or len(f_ases) == 0 or set(f_ases) == set(ASES_ALL):
         asesor_mask = pd.Series(True, index=df_cli.index)
     else:
-        asesor_mask = asesor_for_filter.isin(f_ases)
+        asesor_mask = asesor_for_filter_normalized.isin(f_ases)
 
     # Estatus: si está vacío o tiene todos, no filtrar
     if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
