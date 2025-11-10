@@ -4333,34 +4333,9 @@ with tab_cli:
 
     st.subheader("📋 Lista de clientes")
     
-    # APLICAR MISMA CORRECCIÓN: Para la pestaña de clientes, usar datos filtrados EXCEPTO por asesor
-    # para mostrar todos los clientes (misma lógica que en tab_asesores)
-    try:
-        # Aplicar filtros SIN incluir el filtro de asesor
-        sucursal_for_filter_cli = df_cli["sucursal"].fillna("").replace({"": "(Sin sucursal)"})
-        fuente_for_filter_cli = df_cli["fuente"].fillna("").replace({"": "(Sin fuente)"})
-        
-        # Aplicar solo filtros de sucursal, estatus y fuente (NO asesor)
-        if not f_suc or len(f_suc) == 0 or set(f_suc) == set(SUC_ALL):
-            suc_mask_cli = pd.Series(True, index=df_cli.index)
-        else:
-            suc_mask_cli = sucursal_for_filter_cli.isin(f_suc)
-
-        if not f_est or len(f_est) == 0 or set(f_est) == set(EST_ALL):
-            est_mask_cli = pd.Series(True, index=df_cli.index)
-        else:
-            est_mask_cli = df_cli["estatus"].isin(f_est)
-
-        if not f_fuente or len(f_fuente) == 0 or set(f_fuente) == set(FUENTE_ALL):
-            fuente_mask_cli = pd.Series(True, index=df_cli.index)
-        else:
-            fuente_mask_cli = fuente_for_filter_cli.isin(f_fuente)
-        
-        # Datos filtrados para clientes (sin filtro de asesor)
-        df_clientes_mostrar = df_cli[suc_mask_cli & est_mask_cli & fuente_mask_cli].copy()
-    except Exception:
-        # Fallback: usar df_ver si hay error
-        df_clientes_mostrar = df_ver.copy()
+    # Usar los datos ya filtrados del sidebar (df_ver)
+    # que incluye todos los filtros aplicados correctamente
+    df_clientes_mostrar = df_ver.copy()
     
     if df_clientes_mostrar.empty:
         st.info("No hay clientes con los filtros seleccionados.")
