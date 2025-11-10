@@ -3378,17 +3378,6 @@ if is_admin():
 st.sidebar.title("👤 CRM")
 st.sidebar.caption("Filtros")
 
-# Botón para recargar datos desde Google Sheets
-# IMPORTANTE: Usar este botón cuando los datos de Google Sheets no aparezcan en la app
-if st.sidebar.button("🔄 Recargar datos", help="Fuerza la recarga de datos desde Google Sheets"):
-    with st.spinner("Recargando datos desde Google Sheets..."):
-        # Limpiar cache de session_state relacionado con carga
-        for key in ['gs_load_msg_shown', 'gs_debug_shown']:
-            st.session_state.pop(key, None)
-        limpiar_cache_gsheets()
-    st.toast("✅ Datos recargados desde Google Sheets", icon="✅")
-    do_rerun()
-
 # Cargar datos frescos para el sidebar
 df_cli = cargar_y_corregir_clientes()
 
