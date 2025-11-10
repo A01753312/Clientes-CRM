@@ -3610,7 +3610,7 @@ with tab_dash:
         
         st.markdown("---")
         
-        # � ANÁLISIS FINANCIERO
+        #  ANÁLISIS FINANCIERO
 
 
 
@@ -4046,49 +4046,115 @@ with tab_dash:
         if df_analisis.empty:
             st.info("No hay datos con montos registrados para análisis.")
         else:
-            # === PONDERACIONES POR ESTATUS ===
-            factor_riesgo = {
-                "DISPERSADO": 0.95,
-                "PROPUESTA": 0.80,
-                "EN ONBOARDING": 0.70,
-                "PENDIENTE CLIENTE": 0.60,
-                "PENDIENTE DOC": 0.55,
+            # === MODELO FINANCIERO REFINADO ===
+            # Tres componentes: Probabilidad de Conversión, Factor de Retorno, Riesgo
+            prob_conversion = {
+                "DISPERSADO": 1.00,
+                "APROB. CON PROPUESTA": 0.75,
+                "PROPUESTA": 0.75,  # Alias para propuesta
+                "PEND. ACEPT. CLIENTE": 0.65,
+                "PENDIENTE CLIENTE": 0.65,  # Alias
+                "PEND. DOC. PARA EVALUACION": 0.45,
+                "PENDIENTE DOC": 0.45,  # Alias
+                "EN ONBOARDING": 0.55,
+                "RECH. CLIENTE CANCELA": 0.10,
+                "RECH. SOBREENDEUDAMIENTO": 0.05,
             }
             
-            # Para estatus de rechazo, factor 0
+            factor_retorno = {
+                "DISPERSADO": 1.00,
+                "APROB. CON PROPUESTA": 0.85,
+                "PROPUESTA": 0.85,
+                "PEND. ACEPT. CLIENTE": 0.80,
+                "PENDIENTE CLIENTE": 0.80,
+                "PEND. DOC. PARA EVALUACION": 0.70,
+                "PENDIENTE DOC": 0.70,
+                "EN ONBOARDING": 0.75,
+                "RECH. CLIENTE CANCELA": 0.00,
+                "RECH. SOBREENDEUDAMIENTO": 0.00,
+            }
+            
+            riesgo_pct = {
+                "DISPERSADO": 5,
+                "APROB. CON PROPUESTA": 20,
+                "PROPUESTA": 20,
+                "PEND. ACEPT. CLIENTE": 30,
+                "PENDIENTE CLIENTE": 30,
+                "PEND. DOC. PARA EVALUACION": 45,
+                "PENDIENTE DOC": 45,
+                "EN ONBOARDING": 40,
+                "RECH. CLIENTE CANCELA": 90,
+                "RECH. SOBREENDEUDAMIENTO": 95,
+            }
+            
+            # Para otros estatus de rechazo, aplicar valores altos
             for estatus in df_analisis['estatus'].unique():
                 if estatus and (estatus.startswith("RECH") or estatus.startswith("REC")):
-                    factor_riesgo[estatus] = 0.00
+                    if estatus not in prob_conversion:
+                        prob_conversion[estatus] = 0.05
+                        factor_retorno[estatus] = 0.00
+                        riesgo_pct[estatus] = 95
             
-            # Factor por defecto para estatus no definidos
-            df_analisis["Factor Riesgo"] = df_analisis["estatus"].map(factor_riesgo).fillna(0.5)
-            df_analisis["Retorno Esperado"] = df_analisis["monto_analisis"] * df_analisis["Factor Riesgo"]
-            df_analisis["Riesgo Estimado (%)"] = (1 - df_analisis["Factor Riesgo"]) * 100
+            # Aplicar modelo refinado
+            df_analisis["Probabilidad de Conversión"] = df_analisis["estatus"].map(prob_conversion).fillna(0.5)
+            df_analisis["Factor Retorno"] = df_analisis["estatus"].map(factor_retorno).fillna(0.5)
+            df_analisis["Riesgo (%)"] = df_analisis["estatus"].map(riesgo_pct).fillna(50)
             
-            # === MÉTRICAS GLOBALES ===
-            total_otorgado = df_analisis["monto_analisis"].sum()
+            # Cálculos financieros
+            df_analisis["Monto Esperado"] = df_analisis["monto_analisis"] * df_analisis["Probabilidad de Conversión"]
+            df_analisis["Retorno Esperado"] = df_analisis["monto_analisis"] * df_analisis["Factor Retorno"]
+            df_analisis["Riesgo Estimado (%)"] = df_analisis["Riesgo (%)"]  # Para compatibilidad
+            
+            # === MÉTRICAS GLOBALES REFINADAS ===
+            total_cartera = df_analisis["monto_analisis"].sum()
+            total_monto_esperado = df_analisis["Monto Esperado"].sum()
             total_retorno = df_analisis["Retorno Esperado"].sum()
-            prom_riesgo = df_analisis["Riesgo Estimado (%)"].mean()
+            prom_riesgo = df_analisis["Riesgo (%)"].mean()
+            prom_conversion = df_analisis["Probabilidad de Conversión"].mean() * 100
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("💸 Total en Cartera", f"${total_otorgado:,.0f}")
+                st.metric("� Cartera Total", formatear_monto(total_cartera))
             with col2:
-                st.metric("📈 Retorno Esperado", f"${total_retorno:,.0f}")
+                st.metric("🎯 Conversión Esperada", formatear_monto(total_monto_esperado))
             with col3:
+                st.metric("📈 Retorno Esperado", formatear_monto(total_retorno))
+            with col4:
                 st.metric("⚠️ Riesgo Promedio", f"{prom_riesgo:.1f}%")
             
             st.markdown("---")
             
-            # === INTERPRETACIÓN AUTOMÁTICA ===
-            st.markdown("##### 📈 Interpretación Financiera")
+            # === DIAGNÓSTICO EJECUTIVO AUTOMATIZADO ===
+            st.markdown("##### 🧠 Diagnóstico Financiero")
             
-            if prom_riesgo < 25:
-                st.success("✅ **Cartera sana:** la mayoría de los créditos se encuentran dispersados o en proceso avanzado. El retorno proyectado es estable y el riesgo operativo bajo.")
-            elif prom_riesgo < 50:
-                st.warning("⚠️ **Riesgo moderado:** existen créditos en evaluación o pendientes. Se recomienda seguimiento y control del pipeline.")
+            # Resumen ejecutivo
+            st.markdown(f"""
+            **📊 Resumen Ejecutivo:**
+            - Cartera total: **{formatear_monto(total_cartera)}**
+            - Conversión esperada: **{formatear_monto(total_monto_esperado)}** ({(total_monto_esperado/total_cartera*100):.1f}% de la cartera)
+            - Retorno esperado: **{formatear_monto(total_retorno)}**
+            - Riesgo promedio: **{prom_riesgo:.1f}%**
+            - Conversión media: **{prom_conversion:.1f}%**
+            """)
+            
+            st.markdown("---")
+            
+            # Análisis automatizado tipo analista
+            if prom_riesgo < 30 and prom_conversion > 70:
+                st.success("✅ **Cartera saludable.** Alta probabilidad de conversión y bajo nivel de riesgo. Se recomienda mantener políticas actuales de aprobación.")
+            elif prom_riesgo < 60 and prom_conversion > 40:
+                st.warning("⚠️ **Cartera moderada.** Algunos clientes requieren seguimiento. Enfocar esfuerzos en etapas de aceptación y documentación.")
             else:
-                st.error("🚨 **Riesgo alto:** una porción significativa de la cartera presenta baja probabilidad de conversión. Es necesario revisar criterios de aprobación.")
+                st.error("🚨 **Riesgo alto.** La mayoría de las solicitudes tienen baja conversión o alta cancelación. Revisar criterios de originación y documentación.")
+            
+            # Análisis específico de oportunidades
+            pendientes = df_analisis[df_analisis['estatus'].str.contains('PEND|PENDIENTE', na=False)]
+            if not pendientes.empty:
+                total_pendientes = len(pendientes)
+                monto_pendientes = pendientes['monto_analisis'].sum()
+                pct_pendientes = (total_pendientes / len(df_analisis) * 100)
+                
+                st.info(f"💡 **Oportunidad:** {total_pendientes} créditos pendientes ({pct_pendientes:.0f}% del total) representan {formatear_monto(monto_pendientes)} en oportunidades. Priorizar seguimiento puede mejorar conversión.")
             
             # === RESUMEN POR ESTATUS ===
             col_tabla, col_grafico = st.columns([1, 1])
@@ -4115,34 +4181,50 @@ with tab_dash:
                 )
             
             with col_grafico:
-                st.markdown("##### 📊 Riesgo vs Retorno")
+                st.markdown("##### 🧮 Mapa de Riesgo vs Conversión")
                 
-                # Preparar datos para gráfico
-                resumen_chart = resumen.copy()
-                resumen_chart = resumen_chart.sort_values("Retorno Esperado", ascending=False)
+                # Preparar datos para matriz de riesgo
+                df_plot = df_analisis.copy()
+                df_plot["Conversion_Pct"] = df_plot["Probabilidad de Conversión"] * 100
                 
-                # Gráfico profesional
-                chart = alt.Chart(resumen_chart).mark_bar(size=30).encode(
-                    x=alt.X("estatus:N", title="Estatus", sort="-y"),
-                    y=alt.Y("Retorno Esperado:Q", title="Retorno Esperado ($)"),
-                    color=alt.Color(
-                        "Riesgo Estimado (%):Q", 
-                        scale=alt.Scale(scheme="orangered", reverse=True),
-                        title="Riesgo %"
-                    ),
+                # Gráfico de dispersión avanzado
+                chart = alt.Chart(df_plot).mark_circle().encode(
+                    x=alt.X("Conversion_Pct:Q", title="Probabilidad de Conversión (%)", scale=alt.Scale(domain=[0, 100])),
+                    y=alt.Y("Riesgo (%):Q", title="Riesgo Estimado (%)", scale=alt.Scale(domain=[0, 100])),
+                    color=alt.Color("estatus:N", legend=alt.Legend(title="Estatus")),
+                    size=alt.Size("monto_analisis:Q", title="Monto Propuesto ($)", scale=alt.Scale(range=[50, 400])),
                     tooltip=[
+                        alt.Tooltip("nombre:N", title="Cliente"),
                         alt.Tooltip("estatus:N", title="Estatus"),
-                        alt.Tooltip("Clientes:Q", title="Clientes"),
-                        alt.Tooltip("monto_analisis:Q", title="Monto Total", format="$,.0f"),
-                        alt.Tooltip("Retorno Esperado:Q", title="Retorno", format="$,.0f"),
-                        alt.Tooltip("Riesgo Estimado (%):Q", title="Riesgo (%)", format=".1f")
+                        alt.Tooltip("monto_analisis:Q", title="Monto", format="$,.0f"),
+                        alt.Tooltip("Conversion_Pct:Q", title="Probabilidad Conversión (%)", format=".0f"),
+                        alt.Tooltip("Riesgo (%):Q", title="Riesgo (%)", format=".0f")
                     ]
-                ).properties(height=300)
+                ).properties(
+                    height=350,
+                    title="🧮 Mapa de Riesgo vs Conversión — Cartera Kapitaliza"
+                )
                 
-                st.altair_chart(chart, use_container_width=True)
+                # Añadir líneas de referencia para zonas
+                rule_x = alt.Chart(pd.DataFrame([{'x': 60}])).mark_rule(color='red', strokeDash=[5, 5]).encode(x='x:Q')
+                rule_y = alt.Chart(pd.DataFrame([{'y': 40}])).mark_rule(color='red', strokeDash=[5, 5]).encode(y='y:Q')
+                
+                final_chart = chart + rule_x + rule_y
+                st.altair_chart(final_chart, use_container_width=True)
+                
+                # Leyenda de zonas
+                st.markdown("""
+                <div style="font-size: 12px; color: #666;">
+                <strong>Zonas del Mapa:</strong><br>
+                🟢 <strong>Superior Derecha:</strong> Alta conversión, bajo riesgo (objetivo)<br>
+                🟡 <strong>Inferior Derecha:</strong> Alta conversión, alto riesgo (seguimiento)<br>
+                🔴 <strong>Superior Izquierda:</strong> Baja conversión, bajo riesgo (revisar proceso)<br>
+                ⚫ <strong>Inferior Izquierda:</strong> Baja conversión, alto riesgo (rechazar)
+                </div>
+                """, unsafe_allow_html=True)
             
             st.markdown("---")
-            st.caption("© CRM Kapitaliza — Análisis financiero automatizado desarrollado por Violeta Ávila García.")
+            st.caption("© CRM Kapitaliza ")
 
 # ===== Clientes (alta + edición) =====
 with tab_cli:
