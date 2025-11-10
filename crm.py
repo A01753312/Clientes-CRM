@@ -3563,86 +3563,9 @@ with tab_dash:
         st.markdown("---")
         
         # � ANÁLISIS FINANCIERO
-        st.subheader("💰 Análisis Financiero")
-        
-        # Calcular métricas financieras
-        analisis_financiero = calcular_analisis_financiero(df_cli)
-        
-        # KPIs financieros en columnas
-        fin_col1, fin_col2, fin_col3, fin_col4 = st.columns(4)
-        
-        with fin_col1:
-            render_kpi_card(
-                label="💵 Total Propuesto",
-                value=formatear_monto(analisis_financiero['total_propuesto']),
-                icon="💰",
-                color="#28a745"
-            )
-        
-        with fin_col2:
-            render_kpi_card(
-                label="✅ Total Dispersado",
-                value=formatear_monto(analisis_financiero['total_dispersado']),
-                delta=f"{analisis_financiero['tasa_conversion_financiera']:.1f}% del propuesto",
-                icon="💸",
-                color="#007bff"
-            )
-        
-        with fin_col3:
-            render_kpi_card(
-                label="📊 Promedio Propuesto",
-                value=formatear_monto(analisis_financiero['promedio_propuesto']),
-                icon="📈",
-                color="#17a2b8"
-            )
-        
-        with fin_col4:
-            render_kpi_card(
-                label="🎯 Promedio Dispersado",
-                value=formatear_monto(analisis_financiero['promedio_dispersado']),
-                icon="💎",
-                color="#6f42c1"
-            )
-        
-        # Análisis detallado de conversión
-        col_izq, col_der = st.columns(2)
-        
-        with col_izq:
-            st.markdown("##### 📊 Resumen de Conversión")
-            total_clientes = len(df_cli)
-            clientes_con_monto = analisis_financiero['clientes_con_monto']
-            dispersados_con_monto = analisis_financiero['dispersados_con_monto']
-            
-            st.metric(
-                label="Clientes con Monto Registrado",
-                value=f"{clientes_con_monto}/{total_clientes}",
-                delta=f"{(clientes_con_monto/total_clientes*100):.1f}% del total" if total_clientes > 0 else "0%"
-            )
-            
-            st.metric(
-                label="Efectividad Financiera",
-                value=f"{analisis_financiero['tasa_conversion_financiera']:.1f}%",
-                help="Porcentaje del monto propuesto que efectivamente se ha dispersado"
-            )
-        
-        with col_der:
-            st.markdown("##### 💹 Top Estatus por Monto")
-            if not analisis_financiero['montos_por_estatus'].empty:
-                # Obtener top estatus por monto propuesto
-                top_estatus = analisis_financiero['montos_por_estatus'].sort_values(
-                    ('monto_propuesta_num', 'sum'), ascending=False
-                ).head(5)
-                
-                for estatus, data in top_estatus.iterrows():
-                    monto_total = data[('monto_propuesta_num', 'sum')]
-                    cantidad = data[('monto_propuesta_num', 'count')]
-                    promedio = data[('monto_propuesta_num', 'mean')]
-                    
-                    st.metric(
-                        label=f"{estatus}",
-                        value=f"{formatear_monto(monto_total)} ({cantidad} clientes)",
-                        delta=f"Promedio: {formatear_monto(promedio)}"
-                    )
+
+
+
         
         st.markdown("---")
         
