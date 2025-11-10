@@ -4181,7 +4181,7 @@ with tab_dash:
                 )
             
             with col_grafico:
-                st.info("Gráfico removido según solicitud del usuario.")
+                pass  # Columna vacía
             
             st.markdown("---")
             st.caption("© CRM Kapitaliza ")
