@@ -3566,6 +3566,10 @@ with tab_dash:
         # Calcular métricas financieras para el ranking
         analisis_financiero = calcular_analisis_financiero(df_cli)
         
+        # Mostrar total de presupuesto general
+        total_presupuesto = analisis_financiero['total_propuesto']
+        st.markdown(f"**Total Presupuesto General: {formatear_monto(total_presupuesto)}**")
+        
         if not analisis_financiero['montos_por_estatus'].empty:
             # Obtener top estatus por monto propuesto
             top_estatus = analisis_financiero['montos_por_estatus'].sort_values(
@@ -3574,18 +3578,33 @@ with tab_dash:
             
             col1, col2 = st.columns(2)
             
-            # Dividir en dos columnas para mostrar mejor
+            # Dividir en dos columnas para mostrar mejor con texto más pequeño
             for i, (estatus, data) in enumerate(top_estatus.iterrows()):
                 monto_total = data[('monto_propuesta_num', 'sum')]
                 cantidad = data[('monto_propuesta_num', 'count')]
                 promedio = data[('monto_propuesta_num', 'mean')]
                 
                 with col1 if i % 2 == 0 else col2:
-                    st.metric(
-                        label=f"{estatus}",
-                        value=f"{formatear_monto(monto_total)} ({int(cantidad)} clientes)",
-                        delta=f"Promedio: {formatear_monto(promedio)}"
-                    )
+                    # Usar markdown para texto más pequeño
+                    st.markdown(f"""
+                    <div style="
+                        border: 1px solid #e1e5e9;
+                        border-radius: 8px;
+                        padding: 12px;
+                        margin: 4px 0;
+                        background-color: #f8f9fa;
+                    ">
+                        <div style="font-size: 12px; color: #6c757d; font-weight: 500;">
+                            {estatus}
+                        </div>
+                        <div style="font-size: 18px; font-weight: bold; color: #212529; margin: 4px 0;">
+                            {formatear_monto(monto_total)}
+                        </div>
+                        <div style="font-size: 11px; color: #6c757d;">
+                            {int(cantidad)} clientes • Promedio: {formatear_monto(promedio)}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
         else:
             st.info("No hay datos con montos registrados para mostrar ranking.")
         
