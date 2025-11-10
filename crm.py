@@ -4181,47 +4181,7 @@ with tab_dash:
                 )
             
             with col_grafico:
-                st.markdown("##### 🧮 Mapa de Riesgo vs Conversión")
-                
-                # Preparar datos para matriz de riesgo
-                df_plot = df_analisis.copy()
-                df_plot["Conversion_Pct"] = df_plot["Probabilidad de Conversión"] * 100
-                
-                # Gráfico de dispersión avanzado
-                chart = alt.Chart(df_plot).mark_circle().encode(
-                    x=alt.X("Conversion_Pct:Q", title="Probabilidad de Conversión (%)", scale=alt.Scale(domain=[0, 100])),
-                    y=alt.Y("Riesgo (%):Q", title="Riesgo Estimado (%)", scale=alt.Scale(domain=[0, 100])),
-                    color=alt.Color("estatus:N", legend=alt.Legend(title="Estatus")),
-                    size=alt.Size("monto_analisis:Q", title="Monto Propuesto ($)", scale=alt.Scale(range=[50, 400])),
-                    tooltip=[
-                        alt.Tooltip("nombre:N", title="Cliente"),
-                        alt.Tooltip("estatus:N", title="Estatus"),
-                        alt.Tooltip("monto_analisis:Q", title="Monto", format="$,.0f"),
-                        alt.Tooltip("Conversion_Pct:Q", title="Probabilidad Conversión (%)", format=".0f"),
-                        alt.Tooltip("Riesgo (%):Q", title="Riesgo (%)", format=".0f")
-                    ]
-                ).properties(
-                    height=350,
-                    title="🧮 Mapa de Riesgo vs Conversión — Cartera Kapitaliza"
-                )
-                
-                # Añadir líneas de referencia para zonas
-                rule_x = alt.Chart(pd.DataFrame([{'x': 60}])).mark_rule(color='red', strokeDash=[5, 5]).encode(x='x:Q')
-                rule_y = alt.Chart(pd.DataFrame([{'y': 40}])).mark_rule(color='red', strokeDash=[5, 5]).encode(y='y:Q')
-                
-                final_chart = chart + rule_x + rule_y
-                st.altair_chart(final_chart, use_container_width=True)
-                
-                # Leyenda de zonas
-                st.markdown("""
-                <div style="font-size: 12px; color: #666;">
-                <strong>Zonas del Mapa:</strong><br>
-                🟢 <strong>Superior Derecha:</strong> Alta conversión, bajo riesgo (objetivo)<br>
-                🟡 <strong>Inferior Derecha:</strong> Alta conversión, alto riesgo (seguimiento)<br>
-                🔴 <strong>Superior Izquierda:</strong> Baja conversión, bajo riesgo (revisar proceso)<br>
-                ⚫ <strong>Inferior Izquierda:</strong> Baja conversión, alto riesgo (rechazar)
-                </div>
-                """, unsafe_allow_html=True)
+                st.info("Gráfico removido según solicitud del usuario.")
             
             st.markdown("---")
             st.caption("© CRM Kapitaliza ")
