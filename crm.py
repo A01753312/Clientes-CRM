@@ -1243,17 +1243,39 @@ def sort_df_by_dates(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ordena el DataFrame por las columnas de fecha si existen ('fecha_ingreso', 'fecha_dispersion', 'ts').
     Si ninguna existe, retorna el DataFrame sin cambios.
+    Maneja formatos de fecha MM/DD/YYYY y DD/MM/YYYY automáticamente.
     """
     df = df.copy()
     date_cols = [col for col in ["fecha_ingreso", "fecha_dispersion", "ts"] if col in df.columns]
     for col in date_cols:
         try:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+            df[col] = parse_dates_flexible(df[col])
         except Exception:
             pass
     if date_cols:
         return df.sort_values(date_cols, ascending=True, na_position="last").reset_index(drop=True)
     return df
+
+def parse_dates_flexible(date_series: pd.Series) -> pd.Series:
+    """
+    Parsea fechas de manera flexible, manejando formatos MM/DD/YYYY y DD/MM/YYYY.
+    Retorna una Serie de datetime o NaT para valores inválidos.
+    """
+    try:
+        # Intentar formato americano (MM/DD/YYYY) primero
+        result = pd.to_datetime(date_series, format='%m/%d/%Y', errors='coerce')
+        # Si quedan valores NaT, intentar formato europeo (DD/MM/YYYY)
+        mask_nat = result.isna()
+        if mask_nat.any():
+            result.loc[mask_nat] = pd.to_datetime(date_series.loc[mask_nat], format='%d/%m/%Y', errors='coerce')
+        # Fallback al parser automático
+        mask_nat = result.isna()
+        if mask_nat.any():
+            result.loc[mask_nat] = pd.to_datetime(date_series.loc[mask_nat], errors='coerce')
+        return result
+    except Exception:
+        # Fallback completo al parser automático
+        return pd.to_datetime(date_series, errors='coerce')
 
 def safe_name(s: str) -> str:
     if s is None:
@@ -3734,7 +3756,11 @@ with tab_dash:
                 st.warning("No se encontraron columnas de fecha válidas.")
             else:
                 df_temp = df_cli.copy()
-                df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors="coerce")
+                # Aplicar el manejo flexible de fechas
+                try:
+                    df_temp[date_col] = parse_dates_flexible(df_temp[date_col])
+                except Exception:
+                    df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors="coerce")
                 df_temp = df_temp.dropna(subset=[date_col])
                 
                 if df_temp.empty:
@@ -4367,7 +4393,9 @@ with tab_cli:
         for _dcol in ("fecha_ingreso", "fecha_dispersion"):
             if _dcol in df_clientes_mostrar.columns:
                 try:
-                    df_clientes_mostrar[_dcol] = pd.to_datetime(df_clientes_mostrar[_dcol], errors="coerce").dt.date.astype(str).replace("NaT", "")
+                    # Aplicar el manejo flexible de fechas
+                    df_temp_col = parse_dates_flexible(df_clientes_mostrar[_dcol])
+                    df_clientes_mostrar[_dcol] = df_temp_col.dt.date.astype(str).replace("NaT", "")
                 except Exception:
                     df_clientes_mostrar[_dcol] = df_clientes_mostrar[_dcol].astype(str).fillna("")
         ed = st.data_editor(
