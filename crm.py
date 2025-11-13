@@ -1402,6 +1402,46 @@ def generar_presentacion_dashboard(df_cli: pd.DataFrame) -> bytes:
     
     slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.2), width=Inches(8.4))
     
+    # === SLIDE 6: DISTRIBUCIÓN POR SUCURSALES ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+    title_frame = title_box.text_frame
+    title_frame.text = "🏢 Distribución por Sucursales"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(32)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # Contar clientes por sucursal
+    sucursal_counts = df_cli["sucursal"].fillna("Sin sucursal").value_counts()
+    
+    # Crear gráfica de barras
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    sucursal_labels = [str(s)[:30] for s in sucursal_counts.index]
+    cantidades = sucursal_counts.values
+    
+    bars = ax.barh(sucursal_labels, cantidades, color='#6f42c1')
+    ax.set_xlabel('Cantidad de Clientes', fontsize=11)
+    ax.set_title('Clientes por Sucursal', fontsize=13, fontweight='bold')
+    ax.invert_yaxis()
+    
+    # Agregar valores
+    for bar, cantidad in zip(bars, cantidades):
+        ax.text(bar.get_width(), bar.get_y() + bar.get_height()/2,
+               f' {int(cantidad)}',
+               va='center', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    img_stream = BytesIO()
+    plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+    plt.close()
+    img_stream.seek(0)
+    
+    slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.2), width=Inches(8.4))
+    
     # Guardar presentación en BytesIO
     pptx_stream = BytesIO()
     prs.save(pptx_stream)
