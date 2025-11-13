@@ -3738,8 +3738,13 @@ with tab_dash:
         st.markdown(f"**Total Presupuesto General: {formatear_monto(total_presupuesto)}**")
         
         if not analisis_financiero['montos_por_estatus'].empty:
+            # Filtrar solo estatus con monto > 0
+            estatus_con_monto = analisis_financiero['montos_por_estatus'][
+                analisis_financiero['montos_por_estatus'][('monto_propuesta_num', 'sum')] > 0
+            ]
+            
             # Obtener top estatus por monto propuesto
-            top_estatus = analisis_financiero['montos_por_estatus'].sort_values(
+            top_estatus = estatus_con_monto.sort_values(
                 ('monto_propuesta_num', 'sum'), ascending=False
             ).head(5)
             
