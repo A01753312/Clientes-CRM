@@ -4281,18 +4281,6 @@ with tab_dash:
             prom_riesgo = df_analisis["Riesgo (%)"].mean()
             prom_conversion = df_analisis["Probabilidad de Conversión"].mean() * 100
             
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("� Cartera Total", formatear_monto(total_cartera))
-            with col2:
-                st.metric("🎯 Conversión Esperada", formatear_monto(total_monto_esperado))
-            with col3:
-                st.metric("📈 Retorno Esperado", formatear_monto(total_retorno))
-            with col4:
-                st.metric("⚠️ Riesgo Promedio", f"{prom_riesgo:.1f}%")
-            
-            st.markdown("---")
-            
             # === DIAGNÓSTICO EJECUTIVO AUTOMATIZADO ===
             st.markdown("##### 🧠 Diagnóstico Financiero")
             
