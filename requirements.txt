@@ -22,5 +22,10 @@ requests
 # --- Visualizaciones ---
 altair
 
+# --- Generación de presentaciones ---
+python-pptx
+matplotlib
+pillow
+
 # --- Producción en Streamlit Cloud ---
 protobuf==4.25.1
