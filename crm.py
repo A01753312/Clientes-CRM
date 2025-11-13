@@ -1070,7 +1070,7 @@ def generar_presentacion_dashboard(df_cli: pd.DataFrame) -> bytes:
     background = slide.background
     fill = background.fill
     fill.solid()
-    fill.fore_color.rgb = RGBColor(40, 167, 69)  # Verde Kapitaliza
+    fill.fore_color.rgb = RGBColor(255,255,0)  # Verde Kapitaliza
     
     # Título
     title_box = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(1.5))
@@ -4419,25 +4419,15 @@ with tab_dash:
     if df_cli.empty:
         st.info("Sin clientes aún.")
     else:
-        # Botón para descargar reporte al inicio
-        col_titulo, col_html, col_pptx = st.columns([3, 1, 1])
+        # Botón para descargar presentación
+        col_titulo, col_pptx = st.columns([4, 1])
         with col_titulo:
             st.subheader("📊 KPIs Principales")
-        with col_html:
-            # Generar HTML del reporte
-            html_reporte = generar_reporte_dashboard_html(df_cli)
-            st.download_button(
-                label="📄 HTML",
-                data=html_reporte,
-                file_name=f"reporte_dashboard_{datetime.now().strftime('%Y%m%d_%H%M')}.html",
-                mime="text/html",
-                help="Descargar reporte en formato HTML"
-            )
         with col_pptx:
             # Generar PowerPoint del dashboard
             pptx_data = generar_presentacion_dashboard(df_cli)
             st.download_button(
-                label="📊 PowerPoint",
+                label="📊 Descargar",
                 data=pptx_data,
                 file_name=f"dashboard_kapitaliza_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
