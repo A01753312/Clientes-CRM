@@ -1116,6 +1116,47 @@ def generar_presentacion_dashboard(df_cli: pd.DataFrame) -> bytes:
     
     slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.2), width=Inches(8.4))
     
+    # === SLIDE 7: DISTRIBUCIÓN POR ASESORES ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+    title_frame = title_box.text_frame
+    title_frame.text = "👤 Distribución por Asesores"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(32)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # Contar clientes por asesor
+    asesor_counts = df_cli["asesor"].fillna("Sin asesor").value_counts()
+    
+    # Crear gráfica de barras (mostrar top 10 si hay muchos)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    top_asesores = asesor_counts.head(10)
+    asesor_labels = [str(a)[:30] for a in top_asesores.index]
+    cantidades = top_asesores.values
+    
+    bars = ax.barh(asesor_labels, cantidades, color='#fd7e14')
+    ax.set_xlabel('Cantidad de Clientes', fontsize=11)
+    ax.set_title('Top 10 Asesores (por cantidad de clientes)', fontsize=13, fontweight='bold')
+    ax.invert_yaxis()
+    
+    # Agregar valores
+    for bar, cantidad in zip(bars, cantidades):
+        ax.text(bar.get_width(), bar.get_y() + bar.get_height()/2,
+               f' {int(cantidad)}',
+               va='center', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    img_stream = BytesIO()
+    plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+    plt.close()
+    img_stream.seek(0)
+    
+    slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.2), width=Inches(8.4))
+    
     # Guardar presentación en BytesIO
     pptx_stream = BytesIO()
     prs.save(pptx_stream)
