@@ -1028,6 +1028,387 @@ def generar_reporte_dashboard_html(df_cli: pd.DataFrame) -> str:
     
     return html
 
+def generar_presentacion_dashboard(df_cli: pd.DataFrame) -> bytes:
+    """Genera una presentación PowerPoint completa del dashboard con gráficas"""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.enum.text import PP_ALIGN
+    from pptx.dml.color import RGBColor
+    from io import BytesIO
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')  # Backend sin GUI
+    
+    # Crear presentación
+    prs = Presentation()
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+    
+    # Calcular todas las métricas necesarias
+    total_clientes = len(df_cli)
+    estatus_counts = df_cli["estatus"].fillna("").value_counts()
+    
+    dispersados = estatus_counts.get("DISPERSADO", 0)
+    rechazados = sum([
+        count for estatus, count in estatus_counts.items() 
+        if estatus and (estatus.startswith("RECH") or estatus.startswith("REC"))
+    ])
+    en_proceso = total_clientes - dispersados - rechazados
+    
+    tasa_exito = (dispersados / total_clientes * 100) if total_clientes > 0 else 0
+    tasa_proceso = (en_proceso / total_clientes * 100) if total_clientes > 0 else 0
+    tasa_rechazo = (rechazados / total_clientes * 100) if total_clientes > 0 else 0
+    
+    # Análisis financiero
+    analisis_financiero = calcular_analisis_financiero(df_cli)
+    total_presupuesto = analisis_financiero['total_propuesto']
+    
+    # === SLIDE 1: PORTADA ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Layout en blanco
+    
+    # Fondo de color
+    background = slide.background
+    fill = background.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(40, 167, 69)  # Verde Kapitaliza
+    
+    # Título
+    title_box = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(1.5))
+    title_frame = title_box.text_frame
+    title_frame.text = "Dashboard CRM Kapitaliza"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(54)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(255, 255, 255)
+    title_p.alignment = PP_ALIGN.CENTER
+    
+    # Subtítulo con fecha
+    subtitle_box = slide.shapes.add_textbox(Inches(1), Inches(4.5), Inches(8), Inches(0.8))
+    subtitle_frame = subtitle_box.text_frame
+    from datetime import datetime
+    subtitle_frame.text = f"Reporte Ejecutivo - {datetime.now().strftime('%d/%m/%Y')}"
+    subtitle_p = subtitle_frame.paragraphs[0]
+    subtitle_p.font.size = Pt(24)
+    subtitle_p.font.color.rgb = RGBColor(255, 255, 255)
+    subtitle_p.alignment = PP_ALIGN.CENTER
+    
+    # === SLIDE 2: KPIs PRINCIPALES ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    
+    # Título
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+    title_frame = title_box.text_frame
+    title_frame.text = "📊 KPIs Principales"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(32)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # KPIs en cuadros
+    kpis = [
+        ("Total de Clientes", total_clientes, "👥", ""),
+        ("Dispersados (Éxito)", dispersados, "✅", f"{tasa_exito:.1f}%"),
+        ("En Proceso", en_proceso, "⏳", f"{tasa_proceso:.1f}%"),
+        ("Rechazados", rechazados, "❌", f"{tasa_rechazo:.1f}%")
+    ]
+    
+    x_start = 0.5
+    y_pos = 1.5
+    width = 2.2
+    height = 1.8
+    gap = 0.15
+    
+    for i, (label, value, icon, delta) in enumerate(kpis):
+        x_pos = x_start + i * (width + gap)
+        
+        # Caja con borde
+        shape = slide.shapes.add_shape(
+            1,  # Rectangle
+            Inches(x_pos), Inches(y_pos), Inches(width), Inches(height)
+        )
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor(248, 249, 250)
+        shape.line.color.rgb = RGBColor(225, 229, 233)
+        
+        # Etiqueta
+        label_box = slide.shapes.add_textbox(
+            Inches(x_pos + 0.1), Inches(y_pos + 0.2), Inches(width - 0.2), Inches(0.4)
+        )
+        label_frame = label_box.text_frame
+        label_frame.text = f"{icon} {label}"
+        label_p = label_frame.paragraphs[0]
+        label_p.font.size = Pt(11)
+        label_p.font.color.rgb = RGBColor(108, 117, 125)
+        label_p.alignment = PP_ALIGN.CENTER
+        
+        # Valor
+        value_box = slide.shapes.add_textbox(
+            Inches(x_pos + 0.1), Inches(y_pos + 0.7), Inches(width - 0.2), Inches(0.6)
+        )
+        value_frame = value_box.text_frame
+        value_frame.text = str(value)
+        value_p = value_frame.paragraphs[0]
+        value_p.font.size = Pt(36)
+        value_p.font.bold = True
+        value_p.font.color.rgb = RGBColor(33, 37, 41)
+        value_p.alignment = PP_ALIGN.CENTER
+        
+        # Delta
+        if delta:
+            delta_box = slide.shapes.add_textbox(
+                Inches(x_pos + 0.1), Inches(y_pos + 1.4), Inches(width - 0.2), Inches(0.3)
+            )
+            delta_frame = delta_box.text_frame
+            delta_frame.text = delta
+            delta_p = delta_frame.paragraphs[0]
+            delta_p.font.size = Pt(10)
+            delta_p.font.color.rgb = RGBColor(108, 117, 125)
+            delta_p.alignment = PP_ALIGN.CENTER
+    
+    # Gráfica de distribución de estatus (pie chart)
+    fig, ax = plt.subplots(figsize=(4, 3))
+    sizes = [dispersados, en_proceso, rechazados]
+    labels = ['Dispersados', 'En Proceso', 'Rechazados']
+    colors = ['#28a745', '#ffc107', '#dc3545']
+    
+    if sum(sizes) > 0:
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90)
+        ax.axis('equal')
+    
+    # Guardar gráfica en BytesIO
+    img_stream = BytesIO()
+    plt.tight_layout()
+    plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+    plt.close()
+    img_stream.seek(0)
+    
+    # Agregar gráfica al slide
+    slide.shapes.add_picture(img_stream, Inches(3), Inches(3.8), width=Inches(4))
+    
+    # === SLIDE 3: TOP ESTATUS POR MONTO ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    
+    # Título
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+    title_frame = title_box.text_frame
+    title_frame.text = "💹 Top Estatus por Monto"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(32)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # Total presupuesto
+    presupuesto_box = slide.shapes.add_textbox(Inches(0.5), Inches(1), Inches(9), Inches(0.4))
+    presupuesto_frame = presupuesto_box.text_frame
+    presupuesto_frame.text = f"Total Presupuesto General: {formatear_monto(total_presupuesto)}"
+    presupuesto_p = presupuesto_frame.paragraphs[0]
+    presupuesto_p.font.size = Pt(18)
+    presupuesto_p.font.bold = True
+    presupuesto_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # Top estatus
+    if not analisis_financiero['montos_por_estatus'].empty:
+        estatus_con_monto = analisis_financiero['montos_por_estatus'][
+            analisis_financiero['montos_por_estatus'][('monto_propuesta_num', 'sum')] > 0
+        ]
+        top_estatus = estatus_con_monto.sort_values(
+            ('monto_propuesta_num', 'sum'), ascending=False
+        ).head(5)
+        
+        # Crear gráfica de barras
+        fig, ax = plt.subplots(figsize=(8, 4))
+        estatus_nombres = [str(e)[:30] for e in top_estatus.index]  # Limitar longitud
+        montos = [top_estatus.loc[e, ('monto_propuesta_num', 'sum')] for e in top_estatus.index]
+        
+        bars = ax.barh(estatus_nombres, montos, color='#28a745')
+        ax.set_xlabel('Monto ($)', fontsize=11)
+        ax.set_title('Top 5 Estatus por Monto', fontsize=13, fontweight='bold')
+        
+        # Agregar valores en las barras
+        for i, (bar, monto) in enumerate(zip(bars, montos)):
+            ax.text(bar.get_width(), bar.get_y() + bar.get_height()/2, 
+                   f' {formatear_monto(monto)}', 
+                   va='center', fontsize=10, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Guardar gráfica
+        img_stream = BytesIO()
+        plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+        plt.close()
+        img_stream.seek(0)
+        
+        # Agregar al slide
+        slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.8), width=Inches(8.4))
+    
+    # === SLIDE 4: ANÁLISIS FINANCIERO ===
+    df_temp = df_cli.copy()
+    
+    def limpiar_monto_simple(monto_str):
+        if pd.isna(monto_str) or str(monto_str).strip() == "":
+            return 0.0
+        try:
+            import re
+            clean = re.sub(r'[,$\s]', '', str(monto_str))
+            return float(clean)
+        except:
+            return 0.0
+    
+    df_temp['monto_analisis'] = df_temp.apply(
+        lambda row: limpiar_monto_simple(row['monto_final']) if row['estatus'] == 'DISPERSADO' 
+        else limpiar_monto_simple(row['monto_propuesta']), axis=1
+    )
+    df_analisis = df_temp[df_temp['monto_analisis'] > 0].copy()
+    
+    if not df_analisis.empty:
+        # Modelo financiero
+        prob_conversion = {
+            "DISPERSADO": 1.00, "APROB. CON PROPUESTA": 0.75, "PROPUESTA": 0.75,
+            "PEND. ACEPT. CLIENTE": 0.65, "PENDIENTE CLIENTE": 0.65,
+            "PEND. DOC. PARA EVALUACION": 0.45, "PENDIENTE DOC": 0.45,
+            "EN ONBOARDING": 0.55, "RECH. CLIENTE CANCELA": 0.10,
+            "RECH. SOBREENDEUDAMIENTO": 0.05,
+        }
+        factor_retorno = {
+            "DISPERSADO": 1.00, "APROB. CON PROPUESTA": 0.85, "PROPUESTA": 0.85,
+            "PEND. ACEPT. CLIENTE": 0.80, "PENDIENTE CLIENTE": 0.80,
+            "PEND. DOC. PARA EVALUACION": 0.70, "PENDIENTE DOC": 0.70,
+            "EN ONBOARDING": 0.75, "RECH. CLIENTE CANCELA": 0.00,
+            "RECH. SOBREENDEUDAMIENTO": 0.00,
+        }
+        riesgo_pct = {
+            "DISPERSADO": 5, "APROB. CON PROPUESTA": 20, "PROPUESTA": 20,
+            "PEND. ACEPT. CLIENTE": 30, "PENDIENTE CLIENTE": 30,
+            "PEND. DOC. PARA EVALUACION": 45, "PENDIENTE DOC": 45,
+            "EN ONBOARDING": 40, "RECH. CLIENTE CANCELA": 90,
+            "RECH. SOBREENDEUDAMIENTO": 95,
+        }
+        
+        df_analisis["Probabilidad de Conversión"] = df_analisis["estatus"].map(prob_conversion).fillna(0.5)
+        df_analisis["Factor Retorno"] = df_analisis["estatus"].map(factor_retorno).fillna(0.5)
+        df_analisis["Riesgo (%)"] = df_analisis["estatus"].map(riesgo_pct).fillna(50)
+        
+        df_analisis["Monto Esperado"] = df_analisis["monto_analisis"] * df_analisis["Probabilidad de Conversión"]
+        df_analisis["Retorno Esperado"] = df_analisis["monto_analisis"] * df_analisis["Factor Retorno"]
+        
+        total_cartera = df_analisis["monto_analisis"].sum()
+        total_monto_esperado = df_analisis["Monto Esperado"].sum()
+        total_retorno = df_analisis["Retorno Esperado"].sum()
+        prom_riesgo = df_analisis["Riesgo (%)"].mean()
+        prom_conversion = df_analisis["Probabilidad de Conversión"].mean() * 100
+        
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        
+        # Título
+        title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+        title_frame = title_box.text_frame
+        title_frame.text = "🧠 Diagnóstico Financiero"
+        title_p = title_frame.paragraphs[0]
+        title_p.font.size = Pt(32)
+        title_p.font.bold = True
+        title_p.font.color.rgb = RGBColor(33, 37, 41)
+        
+        # Resumen ejecutivo en texto
+        resumen_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.2), Inches(8.4), Inches(2.5))
+        resumen_frame = resumen_box.text_frame
+        resumen_frame.word_wrap = True
+        
+        # Agregar párrafos
+        p1 = resumen_frame.paragraphs[0]
+        p1.text = "📊 Resumen Ejecutivo"
+        p1.font.size = Pt(20)
+        p1.font.bold = True
+        p1.font.color.rgb = RGBColor(0, 102, 204)
+        
+        puntos = [
+            f"Cartera total: {formatear_monto(total_cartera)}",
+            f"Conversión esperada: {formatear_monto(total_monto_esperado)} ({(total_monto_esperado/total_cartera*100):.1f}% de la cartera)",
+            f"Retorno esperado: {formatear_monto(total_retorno)}",
+            f"Riesgo promedio: {prom_riesgo:.1f}%",
+            f"Conversión media: {prom_conversion:.1f}%"
+        ]
+        
+        for punto in puntos:
+            p = resumen_frame.add_paragraph()
+            p.text = f"• {punto}"
+            p.font.size = Pt(14)
+            p.font.color.rgb = RGBColor(51, 51, 51)
+            p.level = 1
+        
+        # Gráfica de métricas financieras
+        fig, ax = plt.subplots(figsize=(8, 2.5))
+        
+        categorias = ['Cartera\nTotal', 'Conversión\nEsperada', 'Retorno\nEsperado']
+        valores = [total_cartera, total_monto_esperado, total_retorno]
+        colores = ['#007bff', '#28a745', '#ffc107']
+        
+        bars = ax.bar(categorias, valores, color=colores, alpha=0.7, edgecolor='black')
+        ax.set_ylabel('Monto ($)', fontsize=11)
+        ax.set_title('Análisis Financiero de Cartera', fontsize=13, fontweight='bold')
+        
+        # Agregar valores en las barras
+        for bar, valor in zip(bars, valores):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{formatear_monto(valor)}',
+                   ha='center', va='bottom', fontsize=11, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        img_stream = BytesIO()
+        plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+        plt.close()
+        img_stream.seek(0)
+        
+        slide.shapes.add_picture(img_stream, Inches(1), Inches(4.2), width=Inches(8))
+    
+    # === SLIDE 5: DISTRIBUCIÓN POR ESTATUS ===
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    
+    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(0.6))
+    title_frame = title_box.text_frame
+    title_frame.text = "📊 Distribución de Clientes por Estatus"
+    title_p = title_frame.paragraphs[0]
+    title_p.font.size = Pt(32)
+    title_p.font.bold = True
+    title_p.font.color.rgb = RGBColor(33, 37, 41)
+    
+    # Gráfica de barras horizontales con todos los estatus
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # Ordenar por cantidad
+    top_10_estatus = estatus_counts.head(10)
+    
+    estatus_labels = [str(e)[:25] for e in top_10_estatus.index]
+    cantidades = top_10_estatus.values
+    
+    bars = ax.barh(estatus_labels, cantidades, color='#17a2b8')
+    ax.set_xlabel('Cantidad de Clientes', fontsize=11)
+    ax.set_title('Top 10 Estatus (por cantidad)', fontsize=13, fontweight='bold')
+    ax.invert_yaxis()
+    
+    # Agregar valores
+    for bar, cantidad in zip(bars, cantidades):
+        ax.text(bar.get_width(), bar.get_y() + bar.get_height()/2,
+               f' {int(cantidad)}',
+               va='center', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    img_stream = BytesIO()
+    plt.savefig(img_stream, format='png', dpi=150, bbox_inches='tight')
+    plt.close()
+    img_stream.seek(0)
+    
+    slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.2), width=Inches(8.4))
+    
+    # Guardar presentación en BytesIO
+    pptx_stream = BytesIO()
+    prs.save(pptx_stream)
+    pptx_stream.seek(0)
+    
+    return pptx_stream.getvalue()
+
 def get_base64_image(image_path):
     """Convierte imagen a base64 para embedding en HTML"""
     import base64
@@ -3999,18 +4380,28 @@ with tab_dash:
         st.info("Sin clientes aún.")
     else:
         # Botón para descargar reporte al inicio
-        col_titulo, col_download = st.columns([4, 1])
+        col_titulo, col_html, col_pptx = st.columns([3, 1, 1])
         with col_titulo:
             st.subheader("📊 KPIs Principales")
-        with col_download:
+        with col_html:
             # Generar HTML del reporte
             html_reporte = generar_reporte_dashboard_html(df_cli)
             st.download_button(
-                label="📄 Descargar Reporte",
+                label="📄 HTML",
                 data=html_reporte,
                 file_name=f"reporte_dashboard_{datetime.now().strftime('%Y%m%d_%H%M')}.html",
                 mime="text/html",
-                help="Descargar reporte completo del dashboard en formato HTML"
+                help="Descargar reporte en formato HTML"
+            )
+        with col_pptx:
+            # Generar PowerPoint del dashboard
+            pptx_data = generar_presentacion_dashboard(df_cli)
+            st.download_button(
+                label="📊 PowerPoint",
+                data=pptx_data,
+                file_name=f"dashboard_kapitaliza_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                help="Descargar presentación completa con gráficas"
             )
         
         # Preparar datos para KPIs
